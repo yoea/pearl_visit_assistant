@@ -1037,7 +1037,7 @@ git commit -m "feat: RawStore 受控原始数据仓库与姓名黑名单提取"
 ```ts
 import { describe, it, expect } from 'vitest';
 import { scrubText } from '../src/anonymization/text-scrubber';
-import { MASK } from '../src/security/rules';
+import { MASK, RULES } from '../src/security/rules';
 
 const noBlacklist = new Set<string>();
 
@@ -1081,6 +1081,35 @@ describe('scrubText', () => {
   it('无敏感内容时原样返回', () => {
     expect(scrubText('家庭和睦，收入稳定', noBlacklist)).toBe('家庭和睦，收入稳定');
   });
+
+  it('同一地址词重复出现不误伤（互异计数）', () => {
+    expect(scrubText('母亲在市里菜市场摆摊', noBlacklist)).toBe('母亲在市里菜市场摆摊');
+  });
+
+  it('姓名模式（姓氏+称呼）掩码', () => {
+    expect(scrubText('班主任张老师来访', noBlacklist)).toBe(`班主任${MASK}来访`);
+  });
+
+  it('身份证优先于手机号（138 开头 18 位只产生一个掩码）', () => {
+    expect(scrubText('证件138001380001234567', noBlacklist)).toBe(`证件${MASK}`);
+  });
+
+  it('掩码固定电话', () => {
+    expect(scrubText('家里固话010-12345678', noBlacklist)).toBe(`家里固话${MASK}`);
+  });
+
+  it('掩码珍珠号', () => {
+    expect(scrubText('珍珠号：HEI-2026-001', noBlacklist)).toBe(MASK);
+  });
+});
+
+describe('RULES 不变量（单一来源契约）', () => {
+  it('非空、category 唯一、pattern 全为全局正则', () => {
+    expect(RULES.length).toBeGreaterThan(0);
+    const cats = RULES.map((r) => r.category);
+    expect(new Set(cats).size).toBe(cats.length);
+    for (const rule of RULES) expect(rule.pattern.global).toBe(true);
+  });
 });
 ```
 
@@ -1111,6 +1140,7 @@ export interface Rule {
 /**
  * 规则集单一来源：TextScrubber（掩码）与 SecurityScanner（硬闸）共用。
  * 顺序有语义：id-card 在 mobile 之前（身份证号码含手机号样式的子串，先整体识别）。
+ * 注意：所有 pattern 均为全局（g）正则；用 exec/test 消费前必须重置 lastIndex（replace/match 自动重置）。
  */
 export const RULES: Rule[] = [
   { category: 'id-card', label: '身份证号', pattern: /\d{17}[\dXx]/g, scope: 'both' },
@@ -1123,14 +1153,17 @@ export const RULES: Rule[] = [
   {
     category: 'name',
     label: '姓名模式（姓氏+称呼）',
-    // 常见姓氏 + 老师/校长/主任/同学
-    pattern: /[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜谢邹喻苏潘葛范彭鲁韦马苗方俞任袁柳鲍史唐费薛雷贺倪汤滕罗毕郝邬安常傅卞齐康伍余元顾孟平黄穆萧尹姚邵汪祁毛禹狄米贝明臧计成戴宋庞熊纪舒屈项祝董梁杜阮蓝闵席季贾路娄江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯管卢莫经裘干解应宗丁宣邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀惠甄曲封芮羿储靳汲邴糜松井段富巫乌焦巴弓车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲邰鄂索籍赖卓蔺屠池乔阴胥苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾毋沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公]{1,2}(老师|校长|主任|同学)/g,
+    // 复姓显式列出 + 单字姓氏 + 称呼（班已移除：班主任是角色词；{1,2} 贪婪量词会吞并相邻姓氏字，如「任张老师」，故弃用）
+    pattern: /(?:欧阳|司马|上官|诸葛|夏侯|皇甫|尉迟|公孙|慕容|司徒|令狐|端木|轩辕|东方|西门|独孤|长孙|南宫|宇文|申屠|百里|呼延|第五|鲜于|闾丘|亓官|司寇|巫马|乐正|漆雕|公羊|公冶|宗政|濮阳|淳于|单于|太叔|公西|壤驷|宰父|谷梁|段干|拓跋|夹谷|东郭|羊舌|微生|梁丘|左丘|钟离|[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜谢邹喻苏潘葛范彭鲁韦马苗方俞任袁柳鲍史唐费薛雷贺倪汤滕罗毕郝邬安常傅卞齐康伍余元顾孟平黄穆萧尹姚邵汪祁毛禹狄米贝明臧计成戴宋庞熊纪舒屈项祝董梁杜阮蓝闵席季贾路娄江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯管卢莫经裘干解应宗丁宣邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀惠甄曲封芮羿储靳汲邴糜松井段富巫乌焦巴弓车侯宓蓬全郗仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄印宿白怀蒲邰鄂索籍赖卓蔺屠池乔阴胥苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾毋沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公])(老师|校长|主任|同学)/g,
     scope: 'text',
   },
 ];
 
-/** 地址子句掩码：同一子句（按标点切分）内出现 ≥2 个地址词 → 整句掩码 */
-export const ADDRESS_TOKENS = /省|市|县|区|镇|乡|村|组|路|街|巷|号|栋|单元|室|楼|小区|苑|花园|街道/g;
+/** 地址子句掩码：同一子句（按标点切分）内互异地址词 ≥2 个 → 整句掩码 */
+export const ADDRESS_TOKENS = /省|市|县|区|镇|乡|村|组|路|街道|街|巷|号|栋|单元|室|楼|小区|苑|花园/g;
+
+/** 地址子句切分符（带捕获组；清洗器与扫描器共用，禁止加 g 标志） */
+export const CLAUSE_SPLIT = /([。，；;！？!?，、：])/;
 
 /** 结构化地区字段（省/市/县/籍贯）：不做地址规则扫描（区域级信息经用户确认保留） */
 export const STRUCTURED_REGION_KEYS = new Set(['province', 'city', 'county', 'ancestralHome']);
@@ -1139,16 +1172,16 @@ export const STRUCTURED_REGION_KEYS = new Set(['province', 'city', 'county', 'an
 - [ ] **Step 4: 实现 src/anonymization/text-scrubber.ts**
 
 ```ts
-import { ADDRESS_TOKENS, MASK, RULES } from '../security/rules';
+import { ADDRESS_TOKENS, CLAUSE_SPLIT, MASK, RULES } from '../security/rules';
 
-/** 地址子句掩码：按标点切分，子句内地址词 ≥2 个则整句替换 */
+/** 地址子句掩码：按标点切分，子句内互异地址词 ≥2 个则整句替换 */
 function scrubAddressClauses(text: string): string {
   return text
-    .split(/([。，；;！？!?,，、])/)
+    .split(CLAUSE_SPLIT)
     .map((seg) => {
-      if (/^[。，；;！？!?,，、]$/.test(seg)) return seg;
-      const tokens = seg.match(ADDRESS_TOKENS);
-      return tokens && tokens.length >= 2 ? MASK : seg;
+      if (CLAUSE_SPLIT.test(seg)) return seg;
+      const tokens = new Set(seg.match(ADDRESS_TOKENS) ?? []);
+      return tokens.size >= 2 ? MASK : seg;
     })
     .join('');
 }
@@ -1175,7 +1208,7 @@ export function scrubText(text: string, nameBlacklist: Set<string>): string {
 - [ ] **Step 5: 运行确认通过**
 
 Run: `npx vitest run tests/text-scrubber.test.ts`
-Expected: PASS — 9 个用例全部通过。
+Expected: PASS — 15 个用例全部通过。
 
 - [ ] **Step 6: Commit**
 
@@ -1184,7 +1217,7 @@ git add src/security/rules.ts src/anonymization/text-scrubber.ts tests/text-scru
 git commit -m "feat: 安全规则集（单一来源）与叙事文本清洗器"
 ```
 
-> **执行记录（控制器裁决的计划偏离）**：计划原文的「地址子句掩码」测试期望 `住在[已隐藏]` 与计划实现（整句替换）矛盾——"保留动词前缀再掩码"没有确定性规则可界定边界（`南湖` 本身就是地名，前缀保留规则有泄漏风险）；设计文档（第 5.4/6.1 节）只要求"详细地址片段 → `[已隐藏]`"。**裁决：保持整句替换语义，测试期望改为整句 `MASK`**（Task 7 的对应期望 `父亲电话[已隐藏]，住[已隐藏]` 同步改为 `父亲电话[已隐藏]，[已隐藏]`）。整句掩码更保守且可确定实现。
+> **执行记录（控制器裁决的计划偏离）**：计划原文的「地址子句掩码」测试期望 `住在[已隐藏]` 与计划实现（整句替换）矛盾——"保留动词前缀再掩码"没有确定性规则可界定边界（`南湖` 本身就是地名，前缀保留规则有泄漏风险）；设计文档（第 5.4/6.1 节）只要求"详细地址片段 → `[已隐藏]`"。**裁决：保持整句替换语义，测试期望改为整句 `MASK`**（Task 7 的对应期望 `父亲电话[已隐藏]，住[已隐藏]` 同步改为 `父亲电话[已隐藏]，[已隐藏]`）。整句掩码更保守且可确定实现。质量审查后修复轮（Important）：① 地址子句改**互异词计数**（`母亲在市里菜市场摆摊` 不再被整句掩码）；② 切分符提取为 `CLAUSE_SPLIT` 单一来源（新增 `：`，供 Task 8 scanner 复用）；③ `ADDRESS_TOKENS` 中 `街道` 调至 `街` 前（消除死分支）；④ 补 5 个回归测试（互异计数/姓名模式/身份证优先顺序/固话/珍珠号）+ RULES 不变量测试，共 **15** 用例；⑤ RULES 注释补充 lastIndex 状态说明。⑥ 修复轮验证再发现（BLOCKED 上报）：`班`∈姓氏字符类使「班主任」（班+主任）被姓名模式误掩码——真实叙事高频角色词。**裁决：从姓氏字符类移除 `班`**（真实「班老师」场景极罕见，黑名单仍覆盖其全名；角色词误掩码损失远大于收益）。⑦ 移除 `班` 后暴露第二机制：`{1,2}` 贪婪量词在「班主任张老师来访」的「任」处吞并「任张」构成伪复姓（任张老师）。**裁决：姓名规则改为「显式常见复姓列表 + 单字姓氏」**，弃用 `{1,2}` 量词——修复「任张老师」类吞并，且顺带修复原实现「欧阳老师不掩码」（阳不在姓氏字符类）的复姓盲区。另：15 位旧版身份证仅部分残片掩码（无泄漏风险），本期不覆盖，设计文档 §6.1 的完整版校验属超出范围。
 
 ---
 
@@ -1581,7 +1614,7 @@ Expected: FAIL — 模块不存在。
 - [ ] **Step 3: 实现 src/security/scanner.ts**
 
 ```ts
-import { ADDRESS_TOKENS, RULES, STRUCTURED_REGION_KEYS, type RuleCategory } from './rules';
+import { ADDRESS_TOKENS, CLAUSE_SPLIT, RULES, STRUCTURED_REGION_KEYS, type RuleCategory } from './rules';
 
 export interface SecurityFinding {
   category: RuleCategory | 'name-blacklist' | 'forbidden-field';
@@ -1606,8 +1639,6 @@ const FORBIDDEN_FIELD_NAMES = [
   '姓名', '身份证', '电话', '手机', 'qq', '微信', '邮箱', '地址', '珍珠号', '教师', '审批人',
 ];
 
-const TEXT_ONLY_CATEGORIES = new Set<RuleCategory>(['email', 'qq', 'wechat', 'address', 'pearl-id', 'name']);
-
 /** 遍历 payload 中的所有字段值（含嵌套），按字段路径应用规则 */
 function walk(
   node: unknown,
@@ -1621,7 +1652,6 @@ function walk(
   if (typeof node === 'string') {
     if (isStructuredRegion) return; // 省/市/县/籍贯：区域级信息，用户确认保留
     for (const rule of RULES) {
-      if (rule.scope === 'text' && !TEXT_ONLY_CATEGORIES.has(rule.category)) continue;
       rule.pattern.lastIndex = 0;
       const m = rule.pattern.exec(node);
       if (m) {
@@ -1634,17 +1664,21 @@ function walk(
         return; // 每字段只报告第一个命中
       }
     }
-    // 地址子句检测（与清洗器同源逻辑）：同一字符串内地址词 ≥2 个 → 命中
+    // 地址子句检测（与清洗器同源逻辑）：同一子句内互异地址词 ≥2 个 → 命中
     // 学校名豁免：校名常含省市县字样，属学校级元数据（经用户同意发送）
     if (!isSchoolName) {
-      const addressTokens = node.match(ADDRESS_TOKENS);
-      if (addressTokens && addressTokens.length >= 2) {
-        findings.push({
-          category: 'address',
-          label: '详细地址',
-          field: path,
-          snippet: maskSnippet(node.trim()),
-        });
+      for (const seg of node.split(CLAUSE_SPLIT)) {
+        if (CLAUSE_SPLIT.test(seg)) continue;
+        const tokens = new Set(seg.match(ADDRESS_TOKENS) ?? []);
+        if (tokens.size >= 2) {
+          findings.push({
+            category: 'address',
+            label: '详细地址',
+            field: path,
+            snippet: maskSnippet(seg.trim()),
+          });
+          break;
+        }
       }
     }
     return;
@@ -1741,7 +1775,7 @@ git add src/security/scanner.ts tests/scanner.test.ts
 git commit -m "feat: SecurityScanner 发送前安全硬闸（规则+姓名黑名单+禁止字段名）"
 ```
 
-> **执行记录（控制器裁决的计划偏离）**：① 计划 Step 4 用例数笔误（实际 1+8=9，与 Task 4 同类），新增「学校名含省市不误报」用例后共 **10 个**；② 真实校名常含省市县区字样（如「大庆市杜尔伯特蒙古族自治县第一中学」），按原实现对其做地址子句扫描会误报阻塞发送——**裁决：`walk` 增加 `isSchoolName` 参数，`schoolName` 豁免地址子句检测，其余规则照常扫描（纵深防御不削弱）**。学校名是经用户确认发送的学校级元数据。
+> **执行记录（控制器裁决的计划偏离）**：① 计划 Step 4 用例数笔误（实际 1+8=9，与 Task 4 同类），新增「学校名含省市不误报」用例后共 **10 个**；② 真实校名常含省市县区字样（如「大庆市杜尔伯特蒙古族自治县第一中学」），按原实现对其做地址子句扫描会误报阻塞发送——**裁决：`walk` 增加 `isSchoolName` 参数，`schoolName` 豁免地址子句检测，其余规则照常扫描（纵深防御不削弱）**。学校名是经用户确认发送的学校级元数据。③ Task 6 质量审查前瞻建议采纳：地址检测由整串级改为**子句级互异计数**（`CLAUSE_SPLIT` 复用 rules.ts 单一来源，与清洗器语义一致，避免「家在县城，在市里打工」类已清洗保留文本被硬闸误拒）；恒假死代码 `TEXT_ONLY_CATEGORIES` 删除。
 
 ---
 
@@ -1811,6 +1845,7 @@ describe('AnalysisService', () => {
   });
 
   it('违规错误携带 findings', async () => {
+    expect.assertions(2);
     const provider: AnalysisProvider = { name: 'stub', analyze: vi.fn(async () => fakeResult) };
     const service = new AnalysisService(provider);
     const malicious: AnalysisRequest = {
@@ -2035,6 +2070,20 @@ describe('MockAnalysisProvider', () => {
     const missing = result.school.completeness.perStudent[0].missingCount;
     expect(missing).toBeGreaterThan(0); // annualIncomeNote/approvalComment 等为 null
   });
+
+  it('学生级：未命中的因素不出现（健康/无负债学生不产生困难因素）', async () => {
+    const provider = new MockAnalysisProvider();
+    const result = await provider.analyze(requestWith([
+      student({
+        anonymousId: 'student-002', perCapitaIncome: 20000, familySituation: '健康',
+        difficultyReason: '无', debtStatus: '无负债', debtNote: null,
+        housingStatus: '自建房', distanceToSchoolKm: 1, schoolChildrenCount: 1,
+        elderlySupportStatus: null, elderlySupportNote: null,
+        healthStatus: '健康', visitSummary: '家庭收入来源单一', annualIncomeNote: '务农',
+      }),
+    ]));
+    expect(result.students[0].difficultyFactors).toHaveLength(0);
+  });
 });
 ```
 
@@ -2229,7 +2278,7 @@ function buildStudentGuide(s: AnonymizedStudent): StudentInterviewGuide {
     ['上学子女人数', s.schoolChildrenCount != null ? `${s.schoolChildrenCount}人` : null],
     ['赡养老人', s.elderlySupportStatus], ['负债情况', s.debtStatus],
   ]
-    .filter(([, v]) => v != null)
+    .filter(([, v]) => v != null && v !== '')
     .map(([label, value]) => ({ label, value: value as string }));
 
   const excerpt = (t: string | null, max = 80): string => {
@@ -2239,17 +2288,17 @@ function buildStudentGuide(s: AnonymizedStudent): StudentInterviewGuide {
   };
 
   const factors: DifficultyFactor[] = [
-    { label: '重大疾病', weight: 5, evidence: excerpt(s.familySituation) || excerpt(s.difficultyReason) },
-    { label: '家庭负债', weight: 4, evidence: excerpt(s.debtNote) || (s.debtStatus ?? '') },
-    { label: '单亲/弱劳动能力', weight: 4, evidence: excerpt(s.visitSummary) || excerpt(s.difficultyReason) },
-    { label: '低收入', weight: 3, evidence: `人均年收入${s.perCapitaIncome ?? '未知'}元` },
-    { label: '多子女上学', weight: 2, evidence: `上学子女${s.schoolChildrenCount ?? 0}人` },
-    { label: '赡养老人', weight: 2, evidence: excerpt(s.elderlySupportNote) || (s.elderlySupportStatus ?? '') },
-    { label: '租房陪读', weight: 1, evidence: s.housingStatus ?? '' },
-    { label: '远距通学', weight: 1, evidence: `距校${s.distanceToSchoolKm ?? 0}公里` },
+    { label: '重大疾病', weight: 5, evidence: excerpt(s.familySituation) || excerpt(s.difficultyReason), hit: isIllness(s) },
+    { label: '家庭负债', weight: 4, evidence: excerpt(s.debtNote) || (s.debtStatus ?? ''), hit: isHighDebt(s) },
+    { label: '单亲/弱劳动能力', weight: 4, evidence: excerpt(s.visitSummary) || excerpt(s.difficultyReason), hit: isSingleParentOrWeakLabor(s) },
+    { label: '低收入', weight: 3, evidence: `人均年收入${s.perCapitaIncome ?? '未知'}元`, hit: isLowIncome(s) },
+    { label: '多子女上学', weight: 2, evidence: `上学子女${s.schoolChildrenCount ?? 0}人`, hit: (s.schoolChildrenCount ?? 0) >= 2 },
+    { label: '赡养老人', weight: 2, evidence: excerpt(s.elderlySupportNote) || (s.elderlySupportStatus ?? ''), hit: hasElderly(s) },
+    { label: '租房陪读', weight: 1, evidence: s.housingStatus ?? '', hit: hasRental(s) },
+    { label: '远距通学', weight: 1, evidence: `距校${s.distanceToSchoolKm ?? 0}公里`, hit: isLongDistance(s) },
   ]
-    .filter((f) => f.evidence !== '')
-    .map((f) => ({ ...f, evidence: f.evidence }));
+    .filter((f) => f.hit)
+    .map(({ label, weight, evidence }) => ({ label, weight, evidence }));
 
   const verificationPoints: string[] = [];
   if (isLowIncome(s) && !s.annualIncomeNote) {
