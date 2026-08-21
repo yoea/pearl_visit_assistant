@@ -3,6 +3,7 @@ import type {
 } from '../types/student';
 import { scrubText } from './text-scrubber';
 import { collectNameBlacklist } from './raw-store';
+import { NAME_BEARING_ALIASES } from './field-policies';
 import { toNumber, toText } from '../utils/number';
 
 /** 排名 → 区间（降低校内公示排名的间接识别风险） */
@@ -15,11 +16,18 @@ export function rankBand(rank: number, total: number): string {
   return '后50%';
 }
 
-/** 需要解析为数字的 keep 字段 */
-const NUMBER_KEYS: (keyof AnonymizedStudent)[] = [
+/** 需要解析为数字的 keep 字段（与 AnonymizedStudent 数值字段编译期锁定） */
+const NUMBER_KEYS = [
   'distanceToSchoolKm', 'zhongkaoFullScore', 'zhongkaoScore', 'gradeSize',
   'annualIncome', 'perCapitaIncome', 'schoolChildrenCount',
-];
+] as const satisfies readonly (keyof AnonymizedStudent)[];
+
+type NumericField = {
+  [K in keyof AnonymizedStudent]: AnonymizedStudent[K] extends number | null ? K : never;
+}[keyof AnonymizedStudent];
+type NumberKeysCovered = NumericField extends (typeof NUMBER_KEYS)[number] ? true : never;
+type NumberKeysComplete = (typeof NUMBER_KEYS)[number] extends NumericField ? true : never;
+export const _numberKeysConsistency: NumberKeysCovered & NumberKeysComplete = true;
 
 const EMPTY_STUDENT: AnonymizedStudent = {
   anonymousId: '', gender: null, ethnicity: null, householdType: null, height: null,
@@ -59,7 +67,7 @@ export function anonymize(
 
     // 姓名索引（仅本地内存，绝不进入 payload）
     const nameCol = mappedColumns.find(
-      (c) => c.action.action === 'drop' && c.action.reason === 'identity' && c.normalizedHeader === '珍珠生姓名',
+      (c) => c.action.action === 'drop' && c.action.reason === 'identity' && NAME_BEARING_ALIASES.includes(c.normalizedHeader),
     );
     if (nameCol) {
       const n = toText(rec.values[nameCol.header]);
@@ -67,12 +75,13 @@ export function anonymize(
     }
 
     const setField = (key: string, value: CellValue) => {
+      if (!(key in EMPTY_STUDENT)) return; // 运行时守卫：canonicalKey 闭集漂移时未知键绝不物化进输出
       (student as unknown as Record<string, unknown>)[key] = value;
     };
 
     for (const col of keepCols) {
       const key = col.canonicalKey!;
-      if ((NUMBER_KEYS as string[]).includes(key)) {
+      if ((NUMBER_KEYS as readonly string[]).includes(key)) {
         setField(key, toNumber(rec.values[col.header]));
       } else {
         setField(key, toText(rec.values[col.header]));
@@ -87,7 +96,7 @@ export function anonymize(
         const rank = toNumber(rec.values[col.header]);
         const gradeHeader = mappedColumns.find((c) => c.canonicalKey === 'gradeSize')?.header;
         const grade = gradeHeader ? toNumber(rec.values[gradeHeader]) : null;
-        setField('admissionRankBand', rank != null && grade != null && grade > 0 ? rankBand(rank, grade) : null);
+        setField('admissionRankBand', rank != null && grade != null && rank > 0 && grade > 0 ? rankBand(rank, grade) : null);
       }
     }
 

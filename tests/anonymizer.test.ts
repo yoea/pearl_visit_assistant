@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { anonymize, rankBand } from '../src/anonymization/anonymizer';
 import { mapFields } from '../src/anonymization/field-mapper';
-import type { RawStudentRecord } from '../src/types/student';
+import type { MappedColumn, RawStudentRecord } from '../src/types/student';
 import { MASK } from '../src/security/rules';
 
 const HEADERS = [
@@ -102,5 +102,32 @@ describe('anonymize', () => {
     expect(out.stats.sensitiveFieldCount).toBe(10); // 8 身份 + 2 第三方
     expect(out.stats.droppedFieldCount).toBe(10);
     expect(out.stats.sentFieldCount).toBe(10);
+  });
+
+  it('姓名列别名表头也能建立姓名索引', () => {
+    const aliasCols = mapFields(['姓名', '性别']).mappedColumns;
+    const out = anonymize([rec({ 姓名: '测试丙', 性别: '女' })], aliasCols);
+    expect(out.nameIndex.get('student-001')).toBe('测试丙');
+    expect(out.students[0].gender).toBe('女');
+  });
+
+  it('排名或年级人数无效（0/负数）时区间为 null', () => {
+    expect(anonymize([rec({ 录取高中全校排名: '0', 全年级人数: '923' })], mappedColumns).students[0].admissionRankBand).toBeNull();
+    expect(anonymize([rec({ 录取高中全校排名: '-3', 全年级人数: '923' })], mappedColumns).students[0].admissionRankBand).toBeNull();
+    expect(anonymize([rec({ 录取高中全校排名: '160', 全年级人数: '0' })], mappedColumns).students[0].admissionRankBand).toBeNull();
+  });
+
+  it('空记录返回空输出与零统计', () => {
+    const out = anonymize([], mappedColumns);
+    expect(out.students).toHaveLength(0);
+    expect(out.stats.rawStudentCount).toBe(0);
+    expect(out.stats.sentFieldCount).toBe(10); // 列级统计不受行数影响
+  });
+
+  it('未知 canonicalKey 不会进入输出（运行时守卫）', () => {
+    const evilCol: MappedColumn = { header: 'X列', normalizedHeader: 'x列', canonicalKey: 'evilKey', action: { action: 'keep' } };
+    const out = anonymize([rec({ X列: '泄漏值' })], [...mappedColumns, evilCol]);
+    expect(JSON.stringify(out.students[0])).not.toContain('evilKey');
+    expect(JSON.stringify(out.students[0])).not.toContain('泄漏值');
   });
 });
