@@ -504,6 +504,11 @@ export const FORBIDDEN_IDENTITY_ALIASES: string[] = [
 /** 第三方姓名别名：必须删除 */
 export const THIRD_PARTY_ALIASES: string[] = ['家访教师姓名', '家访教师', '审批人', '结对捐方'];
 
+/** 姓名承载列别名（身份姓名 + 第三方姓名）：黑名单提取与扫描器共用，避免双源漂移 */
+export const NAME_BEARING_ALIASES: string[] = [
+  '珍珠生姓名', '姓名', '学生姓名', '家访教师姓名', '家访教师', '审批人', '结对捐方',
+];
+
 /** 内部编号/常量字段：删除（学校名称与期数在解析器中提取为请求元数据） */
 export const INTERNAL_ALIASES: string[] = [
   '序号', '学校编号', '珍珠班名称', '珍珠班编号', '资助项目名称', '出资方类型', '拨款金额',
@@ -517,9 +522,7 @@ export function normalizeHeader(header: string): string {
 
 export function classifyHeader(header: string): { canonicalKey: CanonicalKey | null; action: FieldAction } {
   const h = normalizeHeader(header);
-  for (const [key, entry] of Object.entries(FIELD_POLICIES)) {
-    if (entry.aliases.includes(h)) return { canonicalKey: key as CanonicalKey, action: entry.action };
-  }
+  // 删除表优先（fail-safe）：若未来某别名误入策略表，冲突时仍按删除处理（四表零交集有不变量测试钉死）
   if (FORBIDDEN_IDENTITY_ALIASES.includes(h)) {
     return { canonicalKey: null, action: { action: 'drop', reason: 'identity' } };
   }
@@ -528,6 +531,9 @@ export function classifyHeader(header: string): { canonicalKey: CanonicalKey | n
   }
   if (INTERNAL_ALIASES.includes(h)) {
     return { canonicalKey: null, action: { action: 'drop', reason: 'internal' } };
+  }
+  for (const [key, entry] of Object.entries(FIELD_POLICIES)) {
+    if (entry.aliases.includes(h)) return { canonicalKey: key as CanonicalKey, action: entry.action };
   }
   return { canonicalKey: null, action: { action: 'drop', reason: 'unknown' } };
 }
@@ -573,7 +579,7 @@ export function mapFields(headers: string[]): FieldMappingResult {
 - [ ] **Step 5: 运行确认通过**
 
 Run: `npx vitest run tests/field-mapper.test.ts`
-Expected: PASS — 9 个用例全部通过。
+Expected: PASS — 14 个用例全部通过（9 个原用例 + 质量审查后追加的不变量/导出面测试）。
 
 - [ ] **Step 6: Commit**
 
@@ -581,6 +587,9 @@ Expected: PASS — 9 个用例全部通过。
 git add src/anonymization/field-policies.ts src/anonymization/field-mapper.ts tests/field-mapper.test.ts
 git commit -m "feat: 字段策略表与字段映射（未知字段默认不发送）"
 ```
+
+> **执行记录（控制器授权的计划偏离，均已合入实现与测试）**：
+> ① `classifyHeader` 改为删除表优先的 fail-safe 顺序（提交 f94d22b，质量审查 Important #1；四表零交集不变量 + 各表无重复别名已固化为测试）；② 导出面测试补齐：`cohortColumn` 识别/null、`isKnownHeaderName` true/false/身份别名 true、`normalizeHeader` 内部空格压缩；③ 一致性检查 `_canonicalKeyConsistency`（CanonicalKey ↔ AnonymizedStudent 双向锁定，admissionRank/anonymousId/admissionRankBand 例外）；④ 后续任务追加 `NAME_BEARING_ALIASES`（提交 cb0fa1a，黑名单与策略表单源化）。
 
 ---
 
@@ -863,6 +872,7 @@ git commit -m "feat: Excel 解析器与表头自动检测"
 ```ts
 import { describe, it, expect } from 'vitest';
 import { RawStore, collectNameBlacklist, rawStore } from '../src/anonymization/raw-store';
+import { FORBIDDEN_IDENTITY_ALIASES, NAME_BEARING_ALIASES, THIRD_PARTY_ALIASES } from '../src/anonymization/field-policies';
 import type { RawStudentRecord } from '../src/types/student';
 
 const rec = (values: Record<string, string | number | null>): RawStudentRecord => ({
@@ -905,6 +915,29 @@ describe('collectNameBlacklist', () => {
     expect(names.size).toBe(0);
   });
 });
+
+describe('snapshot 与别名不变量', () => {
+  it('snapshot 返回副本，外部修改不影响仓库', () => {
+    const store = new RawStore();
+    store.setRecords([rec({ 性别: '女' })]);
+    const snap = store.snapshot();
+    (snap as RawStudentRecord[]).pop();
+    expect(store.count).toBe(1);
+  });
+
+  it('按姓名别名变体收集（学生姓名/结对捐方）', () => {
+    const names = collectNameBlacklist([
+      rec({ 学生姓名: '测试乙' }),
+      rec({ 结对捐方: '王明' }),
+    ]);
+    expect(names).toEqual(new Set(['测试乙', '王明']));
+  });
+
+  it('姓名别名与策略表一致（不变量）', () => {
+    const known = [...FORBIDDEN_IDENTITY_ALIASES, ...THIRD_PARTY_ALIASES];
+    for (const a of NAME_BEARING_ALIASES) expect(known).toContain(a);
+  });
+});
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -916,7 +949,7 @@ Expected: FAIL — 模块不存在。
 
 ```ts
 import type { RawStudentRecord } from '../types/student';
-import { normalizeHeader } from './field-policies';
+import { NAME_BEARING_ALIASES, normalizeHeader } from './field-policies';
 
 /**
  * 原始数据受控仓库（安全红线核心）。
@@ -940,9 +973,9 @@ export class RawStore {
     return [...new Set(this.records.flatMap((r) => Object.keys(r.values)))];
   }
 
-  /** 仅供脱敏流水线（anonymize）使用，禁止传入 UI 组件 */
-  snapshot(): RawStudentRecord[] {
-    return this.records;
+  /** 仅供脱敏流水线（anonymize）使用，禁止传入 UI 组件；返回副本，外部修改不影响仓库 */
+  snapshot(): readonly RawStudentRecord[] {
+    return [...this.records];
   }
 
   /** 提取姓名黑名单：学生姓名 + 家访教师姓名 + 审批人（供清洗与扫描共用） */
@@ -959,9 +992,9 @@ export class RawStore {
 export const rawStore = new RawStore();
 
 /** 从原始记录提取姓名黑名单。家访教师姓名可能含多个姓名，按标点/空白拆分。 */
-export function collectNameBlacklist(records: RawStudentRecord[]): Set<string> {
+export function collectNameBlacklist(records: readonly RawStudentRecord[]): Set<string> {
   const names = new Set<string>();
-  const targetAliases = ['珍珠生姓名', '家访教师姓名', '审批人'];
+  const targetAliases = NAME_BEARING_ALIASES;
   for (const r of records) {
     for (const key of Object.keys(r.values)) {
       if (!targetAliases.includes(normalizeHeader(key))) continue;
@@ -979,7 +1012,7 @@ export function collectNameBlacklist(records: RawStudentRecord[]): Set<string> {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `npx vitest run tests/raw-store.test.ts`
-Expected: PASS — 5 个用例全部通过。
+Expected: PASS — 8 个用例全部通过。
 
 - [ ] **Step 5: Commit**
 
@@ -987,6 +1020,9 @@ Expected: PASS — 5 个用例全部通过。
 git add src/anonymization/raw-store.ts tests/raw-store.test.ts
 git commit -m "feat: RawStore 受控原始数据仓库与姓名黑名单提取"
 ```
+
+> **执行记录（控制器授权的计划偏离，提交 cb0fa1a，质量审查 With fixes 闭环）**：
+> ① `snapshot()` 改为 `readonly RawStudentRecord[]` 只读浅副本（消除防线二活引用弱点）；② `collectNameBlacklist` 的 `records` 参数接受 `readonly`，姓名别名改用 `field-policies.ts` 的 `NAME_BEARING_ALIASES`（单源化，覆盖 `姓名`/`学生姓名`/`结对捐方` 等变体）；③ 测试 5→8（snapshot 副本隔离、别名变体收集、别名 ⊆ 策略表不变量）。**下游注意**：Task 7 `anonymize` 的 `records` 参数须接受 `readonly RawStudentRecord[]`（本记录已同步修改计划 Task 7 章节）。
 
 ---
 
@@ -1339,7 +1375,7 @@ const EMPTY_STUDENT: AnonymizedStudent = {
  * drop 字段不进入输出；scrub 字段先文本清洗；generalize 字段变换后输出。
  */
 export function anonymize(
-  records: RawStudentRecord[],
+  records: readonly RawStudentRecord[],
   mappedColumns: MappedColumn[],
 ): AnonymizationOutput {
   const byAction = (a: string) => mappedColumns.filter((c) => c.action.action === a);
