@@ -623,6 +623,17 @@ describe('detectHeaderRow', () => {
     ]);
     expect(idx).toBe(0);
   });
+
+  it('前 5 行全为空时返回 -1', () => {
+    const idx = detectHeaderRow([
+      ['', null],
+      ['', ''],
+      [null, null],
+      ['', null],
+      ['', null],
+    ]);
+    expect(idx).toBe(-1);
+  });
 });
 
 describe('parseExcel', () => {
@@ -638,6 +649,7 @@ describe('parseExcel', () => {
     expect(parsed.headerRowIndex).toBe(2);
     expect(parsed.headers).toEqual(['性别', 'qq', '家庭情况']);
     expect(parsed.rows).toHaveLength(2);
+    expect(parsed.rowNumbers).toEqual([3, 4]);
     expect(parsed.rows[0]['性别']).toBe('女');
     expect(parsed.rows[1]['qq']).toBeNull();
   });
@@ -651,6 +663,7 @@ describe('parseExcel', () => {
     ]);
     const parsed = parseExcel(buf);
     expect(parsed.rows).toHaveLength(2);
+    expect(parsed.rowNumbers).toEqual([2, 4]);
   });
 
   it('提取学校名称与期数', () => {
@@ -679,6 +692,19 @@ describe('parseExcel', () => {
     ]);
     expect(() => parseExcel(buf)).toThrow('表头');
   });
+
+  it('表头重复时抛错', () => {
+    const buf = workbookFromMatrix([
+      ['性别', '性别'],
+      ['女', '男'],
+    ]);
+    expect(() => parseExcel(buf)).toThrow('表头重复');
+  });
+
+  it('空工作表时抛错', () => {
+    const buf = workbookFromMatrix([]);
+    expect(() => parseExcel(buf)).toThrow('表头');
+  });
 });
 ```
 
@@ -693,14 +719,16 @@ Expected: FAIL — 模块不存在。
 import { isKnownHeaderName } from '../anonymization/field-policies';
 
 /**
- * 自动探测表头行下标（0-based）。
+ * 自动探测表头行下标（0-based），找不到时返回 -1。
  * 扫描前 5 行，每行打分 = 命中已知字段名数 × 10 + 非空单元格数；
  * 真实文件第 1 行是合并标题，第 2 行才是表头。
+ * 若得分最高的行没有命中任何已知字段名（可能不是目标文件），返回 -1。
  */
 export function detectHeaderRow(matrix: unknown[][]): number {
   const maxScan = Math.min(matrix.length, 5);
   let best = -1;
   let bestScore = 0;
+  let bestKnown = 0;
   for (let i = 0; i < maxScan; i++) {
     const row = matrix[i];
     const known = row.filter((c) => typeof c === 'string' && isKnownHeaderName(String(c))).length;
@@ -709,9 +737,10 @@ export function detectHeaderRow(matrix: unknown[][]): number {
     if (score > bestScore) {
       bestScore = score;
       best = i;
+      bestKnown = known;
     }
   }
-  return best;
+  return bestKnown > 0 ? best : -1;
 }
 ```
 
@@ -728,6 +757,7 @@ export interface ParsedExcel {
   sheetName: string;
   headers: string[]; // 表头行内容（含空串）
   rows: Record<string, CellValue>[]; // 每行：表头名 → 值（跳过全空行）
+  rowNumbers: number[]; // 与 rows 对齐的 1-based 工作表行号
   schoolName: string | null;
   cohort: string | null;
   headerRowIndex: number; // 表头在 sheet 中的行号（1-based）
@@ -738,6 +768,7 @@ const ParsedExcelSchema = z.object({
   sheetName: z.string(),
   headers: z.array(z.string()),
   rows: z.array(z.record(CellValueSchema)),
+  rowNumbers: z.array(z.number()),
   schoolName: z.string().nullable(),
   cohort: z.string().nullable(),
   headerRowIndex: z.number(),
@@ -756,7 +787,17 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
   }
   const headers = (matrix[headerIdx] as unknown[]).map((h) => (h == null ? '' : String(h).trim()));
 
+  // 重复表头会导致按列名组织时静默覆盖丢数据，fail-closed 拒绝
+  const seen = new Set<string>();
+  for (const h of headers) {
+    if (h === '') continue;
+    const key = normalizeHeader(h);
+    if (seen.has(key)) throw new Error(`表头重复: ${h}，请修正 Excel 后重试`);
+    seen.add(key);
+  }
+
   const rows: Record<string, CellValue>[] = [];
+  const rowNumbers: number[] = [];
   for (let i = headerIdx + 1; i < matrix.length; i++) {
     const rawRow = matrix[i];
     if (!rawRow || rawRow.every((c) => c == null || String(c).trim() === '')) continue;
@@ -765,6 +806,7 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
       if (h !== '') rec[h] = (rawRow[j] ?? null) as CellValue;
     });
     rows.push(rec);
+    rowNumbers.push(i + 1); // i 是 matrix 下标（0-based），sheet 行号 = i + 1
   }
 
   const pickFirstNonEmpty = (alias: string): string | null => {
@@ -778,6 +820,7 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
     sheetName: wb.SheetNames[0],
     headers,
     rows,
+    rowNumbers,
     schoolName: pickFirstNonEmpty('学校名称'),
     cohort: pickFirstNonEmpty('期数'),
     headerRowIndex: headerIdx + 1,
@@ -790,7 +833,7 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
 - [ ] **Step 5: 运行确认通过**
 
 Run: `npx vitest run tests/excel-parser.test.ts`
-Expected: PASS — 8 个用例全部通过。
+Expected: PASS — 10 个用例全部通过。
 
 - [ ] **Step 6: 编译检查**
 
@@ -803,6 +846,9 @@ Expected: 仍报 src/types/pipeline.ts 的 TS2307（scanner/provider/report 类�
 git add src/excel/ tests/excel-parser.test.ts
 git commit -m "feat: Excel 解析器与表头自动检测"
 ```
+
+> **执行记录（控制器授权的计划偏离，均已合入实现与测试）**：
+> ① `detectHeaderRow` 增加 `bestKnown` 门禁——计划原文无门禁，垃圾行（全未知字段但有非空单元格）会被误选为表头，抛错分支不可达；② 补第 8 个用例「前 5 行全为空时返回 -1」（计划宣称 8 个用例但原文只有 7 个）；③ 质量审查闭环（提交 b0fb56a）：重复表头 fail-closed 检测（消息含「表头重复」）、`ParsedExcel.rowNumbers` 行号保留（Task 13 的 `sourceRow` 依赖它，修复空行跳过后行号错位）、新增「表头重复时抛错」「空工作表时抛错」2 个用例（共 10 个）。
 
 ---
 
@@ -3547,7 +3593,7 @@ export default function App() {
     try {
       const parsed = parseExcel(buffer);
       const records: RawStudentRecord[] = parsed.rows.map((values, i) => ({
-        sourceRow: i + 1,
+        sourceRow: parsed.rowNumbers[i], // Task 4 保留的真实工作表行号（跳过空行后仍准确）
         values: values as Record<string, CellValue>,
       }));
       rawStore.setRecords(records);
