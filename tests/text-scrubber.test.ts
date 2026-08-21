@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { scrubText } from '../src/anonymization/text-scrubber';
-import { MASK } from '../src/security/rules';
+import { MASK, RULES } from '../src/security/rules';
 
 const noBlacklist = new Set<string>();
 
@@ -44,5 +44,34 @@ describe('scrubText', () => {
 
   it('无敏感内容时原样返回', () => {
     expect(scrubText('家庭和睦，收入稳定', noBlacklist)).toBe('家庭和睦，收入稳定');
+  });
+
+  it('同一地址词重复出现不误伤（互异计数）', () => {
+    expect(scrubText('母亲在市里菜市场摆摊', noBlacklist)).toBe('母亲在市里菜市场摆摊');
+  });
+
+  it('姓名模式（姓氏+称呼）掩码', () => {
+    expect(scrubText('班主任张老师来访', noBlacklist)).toBe(`班主任${MASK}来访`);
+  });
+
+  it('身份证优先于手机号（138 开头 18 位只产生一个掩码）', () => {
+    expect(scrubText('证件138001380001234567', noBlacklist)).toBe(`证件${MASK}`);
+  });
+
+  it('掩码固定电话', () => {
+    expect(scrubText('家里固话010-12345678', noBlacklist)).toBe(`家里固话${MASK}`);
+  });
+
+  it('掩码珍珠号', () => {
+    expect(scrubText('珍珠号：HEI-2026-001', noBlacklist)).toBe(MASK);
+  });
+});
+
+describe('RULES 不变量（单一来源契约）', () => {
+  it('非空、category 唯一、pattern 全为全局正则', () => {
+    expect(RULES.length).toBeGreaterThan(0);
+    const cats = RULES.map((r) => r.category);
+    expect(new Set(cats).size).toBe(cats.length);
+    for (const rule of RULES) expect(rule.pattern.global).toBe(true);
   });
 });

@@ -1,13 +1,13 @@
-import { ADDRESS_TOKENS, MASK, RULES } from '../security/rules';
+import { ADDRESS_TOKENS, CLAUSE_SPLIT, MASK, RULES } from '../security/rules';
 
-/** 地址子句掩码：按标点切分，子句内地址词 ≥2 个则整句替换 */
+/** 地址子句掩码：按标点切分，子句内互异地址词 ≥2 个则整句替换 */
 function scrubAddressClauses(text: string): string {
   return text
-    .split(/([。，；;！？!?,，、])/)
+    .split(CLAUSE_SPLIT)
     .map((seg) => {
-      if (/^[。，；;！？!?,，、]$/.test(seg)) return seg;
-      const tokens = seg.match(ADDRESS_TOKENS);
-      return tokens && tokens.length >= 2 ? MASK : seg;
+      if (CLAUSE_SPLIT.test(seg)) return seg;
+      const tokens = new Set(seg.match(ADDRESS_TOKENS) ?? []);
+      return tokens.size >= 2 ? MASK : seg;
     })
     .join('');
 }
