@@ -27,6 +27,11 @@ describe('maskSnippet', () => {
     expect(s).not.toContain('110101200001011234');
     expect(s).toContain('****');
   });
+
+  it('短值边界：≤4 全掩码，=5 首尾各留 2 位', () => {
+    expect(maskSnippet('测试甲')).toBe('****');
+    expect(maskSnippet('甲乙丙丁戊')).toBe('甲乙****丁戊');
+  });
 });
 
 describe('scanPayload', () => {
@@ -93,5 +98,48 @@ describe('scanPayload', () => {
     );
     expect(r.passed).toBe(false);
     expect(r.findings[0].category).toBe('address');
+  });
+
+  it('地区字段豁免收窄后：含手机号仍拒绝（keep 字段唯一防线）', () => {
+    const r = scanPayload(
+      { ...cleanRequest, students: [{ ...cleanStudent, province: '黑龙江省13800138000' }] },
+      new Set(),
+    );
+    expect(r.passed).toBe(false);
+    expect(r.findings[0].category).toBe('mobile');
+  });
+
+  it('地址词跨子句不误报（与清洗器同源语义）', () => {
+    const r = scanPayload(
+      { ...cleanRequest, students: [{ ...cleanStudent, visitSummary: '他住在省里。市里的亲戚常来' }] },
+      new Set(),
+    );
+    expect(r.passed).toBe(true);
+  });
+
+  it('数字字段命中身份证规则（18 位纯数字；id-card 规则需 18 字符，1e17 的字符串形式恰为 18 位）', () => {
+    const r = scanPayload(
+      { ...cleanRequest, students: [{ ...cleanStudent, perCapitaIncome: 1e17 }] },
+      new Set(),
+    );
+    expect(r.passed).toBe(false);
+    expect(r.findings[0].category).toBe('id-card');
+  });
+
+  it('null payload fail-closed（结构异常不抛异常）', () => {
+    const r = scanPayload(null, new Set());
+    expect(r.passed).toBe(false);
+    expect(r.findings[0].category).toBe('malformed-payload');
+  });
+
+  it('students 含 null 元素不抛异常', () => {
+    const r = scanPayload({ ...cleanRequest, students: [null] }, new Set());
+    expect(r).toHaveProperty('passed');
+  });
+
+  it('连续两次扫描结果一致（共享正则状态不变量）', () => {
+    const a = JSON.stringify(scanPayload(cleanRequest, new Set(['测试甲'])));
+    const b = JSON.stringify(scanPayload(cleanRequest, new Set(['测试甲'])));
+    expect(a).toBe(b);
   });
 });

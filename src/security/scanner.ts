@@ -1,7 +1,7 @@
 import { ADDRESS_TOKENS, CLAUSE_SPLIT, RULES, STRUCTURED_REGION_KEYS, type RuleCategory } from './rules';
 
 export interface SecurityFinding {
-  category: RuleCategory | 'name-blacklist' | 'forbidden-field';
+  category: RuleCategory | 'name-blacklist' | 'forbidden-field' | 'malformed-payload';
   label: string;
   field: string; // 字段路径，如 students[0].familySituation
   snippet: string; // 掩码片段，绝不包含完整敏感值
@@ -23,18 +23,19 @@ const FORBIDDEN_FIELD_NAMES = [
   '姓名', '身份证', '电话', '手机', 'qq', '微信', '邮箱', '地址', '珍珠号', '教师', '审批人',
 ];
 
+/** 数字字段适用的规则子集（scope 'both'） */
+const BOTH_SCOPE_RULES = RULES.filter((r) => r.scope === 'both');
+
 /** 遍历 payload 中的所有字段值（含嵌套），按字段路径应用规则 */
 function walk(
   node: unknown,
   path: string,
-  key: string,
   isStructuredRegion: boolean,
   isSchoolName: boolean,
   findings: SecurityFinding[],
 ): void {
   if (node == null) return;
   if (typeof node === 'string') {
-    if (isStructuredRegion) return; // 省/市/县/籍贯：区域级信息，用户确认保留
     for (const rule of RULES) {
       rule.pattern.lastIndex = 0;
       const m = rule.pattern.exec(node);
@@ -49,8 +50,9 @@ function walk(
       }
     }
     // 地址子句检测（与清洗器同源逻辑）：同一子句内互异地址词 ≥2 个 → 命中
-    // 学校名豁免：校名常含省市县字样，属学校级元数据（经用户同意发送）
-    if (!isSchoolName) {
+    // 学校名/结构化地区字段豁免：省/市/县/籍贯含区域词属合法值，校名常含省市县字样
+    // （均经用户确认发送）；其余规则照常扫描
+    if (!isSchoolName && !isStructuredRegion) {
       for (const seg of node.split(CLAUSE_SPLIT)) {
         if (CLAUSE_SPLIT.test(seg)) continue;
         const tokens = new Set(seg.match(ADDRESS_TOKENS) ?? []);
@@ -69,7 +71,7 @@ function walk(
   }
   if (typeof node === 'number') {
     const s = String(node);
-    for (const rule of RULES.filter((r) => r.scope === 'both')) {
+    for (const rule of BOTH_SCOPE_RULES) {
       rule.pattern.lastIndex = 0;
       const m = rule.pattern.exec(s);
       if (m) {
@@ -85,7 +87,7 @@ function walk(
     return;
   }
   if (Array.isArray(node)) {
-    node.forEach((item, i) => walk(item, `${path}[${i}]`, key, false, false, findings));
+    node.forEach((item, i) => walk(item, `${path}[${i}]`, false, false, findings));
     return;
   }
   if (typeof node === 'object') {
@@ -93,7 +95,6 @@ function walk(
       walk(
         v,
         path === '' ? k : `${path}.${k}`,
-        k,
         STRUCTURED_REGION_KEYS.has(k),
         k === 'schoolName',
         findings,
@@ -107,11 +108,20 @@ function walk(
  * 命中即 passed=false；调用方（AnalysisService）必须拒绝发送。
  */
 export function scanPayload(payload: unknown, nameBlacklist: Set<string>): SecurityScanResult {
+  // 0. 结构性守卫：fail-closed，绝不抛异常
+  if (payload === null || typeof payload !== 'object') {
+    return {
+      passed: false,
+      findings: [{ category: 'malformed-payload', label: 'payload 结构异常，已拒绝发送', field: '(payload)', snippet: '****' }],
+    };
+  }
+
   const findings: SecurityFinding[] = [];
 
   // 1. 姓名黑名单：全 payload 精确匹配
   const json = JSON.stringify(payload);
   for (const name of nameBlacklist) {
+    // 单字姓名跳过：与清洗器一致，避免常见单字（如「宁」「省」）误报
     if (name.length >= 2 && json.includes(name)) {
       findings.push({
         category: 'name-blacklist',
@@ -123,13 +133,13 @@ export function scanPayload(payload: unknown, nameBlacklist: Set<string>): Secur
   }
 
   // 2. 字段值规则扫描
-  walk(payload, '', '', false, false, findings);
+  walk(payload, '', false, false, findings);
 
   // 3. 禁止字段名检查
-  const keys = [...Object.keys(payload as object)];
+  const keys = [...Object.keys(payload)];
   if (Array.isArray((payload as { students?: unknown }).students)) {
-    for (const s of (payload as { students: object[] }).students) {
-      keys.push(...Object.keys(s));
+    for (const s of (payload as { students: unknown[] }).students) {
+      if (s !== null && typeof s === 'object') keys.push(...Object.keys(s));
     }
   }
   for (const key of new Set(keys)) {
