@@ -42,7 +42,7 @@ export class RawStore {
 export const rawStore = new RawStore();
 
 /** 从原始记录提取姓名黑名单。家访教师姓名可能含多个姓名，按标点/空白拆分。 */
-export function collectNameBlacklist(records: RawStudentRecord[]): Set<string> {
+export function collectNameBlacklist(records: readonly RawStudentRecord[]): Set<string> {
   const names = new Set<string>();
   for (const r of records) {
     for (const key of Object.keys(r.values)) {
