@@ -1066,8 +1066,8 @@ describe('scrubText', () => {
     expect(scrubText('家访教师张磊曾来访', new Set(['张磊']))).toBe(`家访教师${MASK}曾来访`);
   });
 
-  it('地址子句掩码（号楼单元室组合）', () => {
-    expect(scrubText('住在南湖回迁一号楼六单元701室', noBlacklist)).toBe(`住在${MASK}`);
+  it('地址子句掩码（号楼单元室组合；整句掩码更保守，避免保留地名前缀）', () => {
+    expect(scrubText('住在南湖回迁一号楼六单元701室', noBlacklist)).toBe(MASK);
   });
 
   it('纯数字金额不误伤（30000 不是 QQ 号）', () => {
@@ -1184,6 +1184,8 @@ git add src/security/rules.ts src/anonymization/text-scrubber.ts tests/text-scru
 git commit -m "feat: 安全规则集（单一来源）与叙事文本清洗器"
 ```
 
+> **执行记录（控制器裁决的计划偏离）**：计划原文的「地址子句掩码」测试期望 `住在[已隐藏]` 与计划实现（整句替换）矛盾——"保留动词前缀再掩码"没有确定性规则可界定边界（`南湖` 本身就是地名，前缀保留规则有泄漏风险）；设计文档（第 5.4/6.1 节）只要求"详细地址片段 → `[已隐藏]`"。**裁决：保持整句替换语义，测试期望改为整句 `MASK`**（Task 7 的对应期望 `父亲电话[已隐藏]，住[已隐藏]` 同步改为 `父亲电话[已隐藏]，[已隐藏]`）。整句掩码更保守且可确定实现。
+
 ---
 
 ## Task 7: Anonymizer 脱敏组装器
@@ -1286,7 +1288,7 @@ describe('anonymize', () => {
       [rec({ 家庭情况: '父亲电话13800138000，住南湖回迁一号楼六单元701室' })],
       mappedColumns,
     );
-    expect(out.students[0].familySituation).toBe(`父亲电话${MASK}，住${MASK}`);
+    expect(out.students[0].familySituation).toBe(`父亲电话${MASK}，${MASK}`);
   });
 
   it('统计数字正确', () => {
