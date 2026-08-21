@@ -62,6 +62,11 @@ export const FORBIDDEN_IDENTITY_ALIASES: string[] = [
 /** 第三方姓名别名：必须删除 */
 export const THIRD_PARTY_ALIASES: string[] = ['家访教师姓名', '家访教师', '审批人', '结对捐方'];
 
+/** 姓名承载列别名（身份姓名 + 第三方姓名）：黑名单提取与扫描器共用，避免双源漂移 */
+export const NAME_BEARING_ALIASES: string[] = [
+  '珍珠生姓名', '姓名', '学生姓名', '家访教师姓名', '家访教师', '审批人', '结对捐方',
+];
+
 /** 内部编号/常量字段：删除（学校名称与期数在解析器中提取为请求元数据） */
 export const INTERNAL_ALIASES: string[] = [
   '序号', '学校编号', '珍珠班名称', '珍珠班编号', '资助项目名称', '出资方类型', '拨款金额',

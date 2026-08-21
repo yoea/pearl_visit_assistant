@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { RawStore, collectNameBlacklist, rawStore } from '../src/anonymization/raw-store';
+import {
+  FORBIDDEN_IDENTITY_ALIASES,
+  THIRD_PARTY_ALIASES,
+  NAME_BEARING_ALIASES,
+} from '../src/anonymization/field-policies';
 import type { RawStudentRecord } from '../src/types/student';
 
 const rec = (values: Record<string, string | number | null>): RawStudentRecord => ({
@@ -22,6 +27,14 @@ describe('RawStore', () => {
     expect(store.count).toBe(0);
   });
 
+  it('snapshot 返回副本，外部修改不影响仓库', () => {
+    const store = new RawStore();
+    store.setRecords([rec({ 性别: '女' })]);
+    const snap = store.snapshot();
+    (snap as RawStudentRecord[]).pop();
+    expect(store.count).toBe(1);
+  });
+
   it('模块级单例存在', () => {
     expect(rawStore).toBeInstanceOf(RawStore);
   });
@@ -40,5 +53,20 @@ describe('collectNameBlacklist', () => {
   it('忽略空值', () => {
     const names = collectNameBlacklist([rec({ 珍珠生姓名: '' }), rec({})]);
     expect(names.size).toBe(0);
+  });
+
+  it('按姓名别名变体收集（学生姓名/结对捐方）', () => {
+    const names = collectNameBlacklist([
+      rec({ 学生姓名: '测试乙' }),
+      rec({ 结对捐方: '王明' }),
+    ]);
+    expect(names).toEqual(new Set(['测试乙', '王明']));
+  });
+
+  it('姓名别名与策略表一致（不变量）', () => {
+    const union = [...FORBIDDEN_IDENTITY_ALIASES, ...THIRD_PARTY_ALIASES];
+    for (const alias of NAME_BEARING_ALIASES) {
+      expect(union).toContain(alias);
+    }
   });
 });

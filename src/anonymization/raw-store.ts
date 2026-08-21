@@ -1,5 +1,5 @@
 import type { RawStudentRecord } from '../types/student';
-import { normalizeHeader } from './field-policies';
+import { NAME_BEARING_ALIASES, normalizeHeader } from './field-policies';
 
 /**
  * 原始数据受控仓库（安全红线核心）。
@@ -23,9 +23,9 @@ export class RawStore {
     return [...new Set(this.records.flatMap((r) => Object.keys(r.values)))];
   }
 
-  /** 仅供脱敏流水线（anonymize）使用，禁止传入 UI 组件 */
-  snapshot(): RawStudentRecord[] {
-    return this.records;
+  /** 仅供脱敏流水线（anonymize）使用，禁止传入 UI 组件；返回副本，外部修改不影响仓库 */
+  snapshot(): readonly RawStudentRecord[] {
+    return [...this.records];
   }
 
   /** 提取姓名黑名单：学生姓名 + 家访教师姓名 + 审批人（供清洗与扫描共用） */
@@ -44,10 +44,9 @@ export const rawStore = new RawStore();
 /** 从原始记录提取姓名黑名单。家访教师姓名可能含多个姓名，按标点/空白拆分。 */
 export function collectNameBlacklist(records: RawStudentRecord[]): Set<string> {
   const names = new Set<string>();
-  const targetAliases = ['珍珠生姓名', '家访教师姓名', '审批人'];
   for (const r of records) {
     for (const key of Object.keys(r.values)) {
-      if (!targetAliases.includes(normalizeHeader(key))) continue;
+      if (!NAME_BEARING_ALIASES.includes(normalizeHeader(key))) continue;
       const v = r.values[key];
       if (typeof v !== 'string' || v.trim() === '') continue;
       for (const part of v.split(/[,，、;；\s]+/)) {
