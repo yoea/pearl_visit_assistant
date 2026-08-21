@@ -2373,7 +2373,7 @@ export class MockAnalysisProvider implements AnalysisProvider {
 - [ ] **Step 5: 运行确认通过**
 
 Run: `npx vitest run tests/mock-provider.test.ts`
-Expected: PASS — 7 个用例全部通过。
+Expected: PASS — 8 个用例全部通过。
 
 - [ ] **Step 6: Commit**
 
@@ -2381,6 +2381,9 @@ Expected: PASS — 7 个用例全部通过。
 git add src/analysis/question-templates.ts src/analysis/mock-provider.ts tests/mock-provider.test.ts
 git commit -m "feat: Mock 分析器（确定性规则引擎）与中性问题模板库"
 ```
+
+**执行记录（控制器预检裁决）：**
+- 学生级困难因素改为 hit 门控：原草案仅有 evidence 门控（`evidence: excerpt(...) || (s.debtStatus ?? '')`），「无负债」学生会生成一条"家庭负债"因素。裁决：给全部 8 个因素加 `hit` 谓词（isIllness/isHighDebt/isSingleParentOrWeakLabor/isLowIncome/schoolChildrenCount≥2/hasElderly/hasRental/isLongDistance），`.filter((f) => f.hit)` 后再剥离 hit 字段；basicInfo 过滤排除空串。同步新增回归测试「学生级：未命中的因素不出现」，Step 5 用例数 7→8。
 
 ---
 
@@ -3835,6 +3838,13 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 ---
 
 ## Task 15: 合成示例数据脚本、README 与最终验证
+
+> **待办（前序任务质量审查遗留 Minor，本任务顺手补齐）**：
+> 1. Task 6 复审 Minor：补 2 个回归测试钉死裁决——`欧阳老师` → `MASK`（复姓盲区）；`任张老师` → `任${MASK}`（伪复姓吞并），加在 tests/text-scrubber.test.ts；
+> 2. Task 6 复审 Minor：`CLAUSE_SPLIT.test(seg)` 未锚定，可恢复 `^[…]$` 单字符锚定写法（split 与 test 同源正则，功能等价，锚定更稳）；
+> 3. Task 6 复审记录（无需改）：「住址：南湖小区3号楼」因 `：` 成为分隔符输出「住址：[已隐藏]」——标签作为独立子句保留，符合子句级语义；
+> 4. Task 5 遗留：NAME_BEARING_ALIASES 不变量仅单向；snapshot 测试中 cast 注释；「数组级副本」文档注释精度；
+> 5. Task 4 遗留：`raw:false` 精度语义注释（格式化差异说明）；单 sheet 解析说明（首张表）；错误包装；LF 警告为良性。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
