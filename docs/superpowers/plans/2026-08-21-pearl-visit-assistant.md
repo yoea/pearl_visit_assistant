@@ -3845,6 +3845,7 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 3. Task 6 复审记录（无需改）：「住址：南湖小区3号楼」因 `：` 成为分隔符输出「住址：[已隐藏]」——标签作为独立子句保留，符合子句级语义；
 > 4. Task 5 遗留：NAME_BEARING_ALIASES 不变量仅单向；snapshot 测试中 cast 注释；「数组级副本」文档注释精度；
 > 5. Task 4 遗留：`raw:false` 精度语义注释（格式化差异说明）；单 sheet 解析说明（首张表）；错误包装；LF 警告为良性。
+> 6. Task 7 规格审查小观察：anonymizer.test.ts 用例 4 标题称「缺排名或年级人数时 null」但仅断言缺年级人数场景，缺排名→null 分支未被断言（实现本身正确）；顺手补缺排名断言。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
