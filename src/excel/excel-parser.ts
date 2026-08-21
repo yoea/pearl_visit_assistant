@@ -8,6 +8,7 @@ export interface ParsedExcel {
   sheetName: string;
   headers: string[]; // 表头行内容（含空串）
   rows: Record<string, CellValue>[]; // 每行：表头名 → 值（跳过全空行）
+  rowNumbers: number[]; // 与 rows 对齐的 1-based 工作表行号
   schoolName: string | null;
   cohort: string | null;
   headerRowIndex: number; // 表头在 sheet 中的行号（1-based）
@@ -18,6 +19,7 @@ const ParsedExcelSchema = z.object({
   sheetName: z.string(),
   headers: z.array(z.string()),
   rows: z.array(z.record(CellValueSchema)),
+  rowNumbers: z.array(z.number()),
   schoolName: z.string().nullable(),
   cohort: z.string().nullable(),
   headerRowIndex: z.number(),
@@ -36,7 +38,17 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
   }
   const headers = (matrix[headerIdx] as unknown[]).map((h) => (h == null ? '' : String(h).trim()));
 
+  // 重复表头会导致按列名组织时静默覆盖丢数据，fail-closed 拒绝
+  const seen = new Set<string>();
+  for (const h of headers) {
+    if (h === '') continue;
+    const key = normalizeHeader(h);
+    if (seen.has(key)) throw new Error(`表头重复: ${h}，请修正 Excel 后重试`);
+    seen.add(key);
+  }
+
   const rows: Record<string, CellValue>[] = [];
+  const rowNumbers: number[] = [];
   for (let i = headerIdx + 1; i < matrix.length; i++) {
     const rawRow = matrix[i];
     if (!rawRow || rawRow.every((c) => c == null || String(c).trim() === '')) continue;
@@ -45,6 +57,7 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
       if (h !== '') rec[h] = (rawRow[j] ?? null) as CellValue;
     });
     rows.push(rec);
+    rowNumbers.push(i + 1); // i 是 matrix 下标（0-based），sheet 行号 = i + 1
   }
 
   const pickFirstNonEmpty = (alias: string): string | null => {
@@ -58,6 +71,7 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
     sheetName: wb.SheetNames[0],
     headers,
     rows,
+    rowNumbers,
     schoolName: pickFirstNonEmpty('学校名称'),
     cohort: pickFirstNonEmpty('期数'),
     headerRowIndex: headerIdx + 1,

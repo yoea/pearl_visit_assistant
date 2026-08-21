@@ -54,6 +54,7 @@ describe('parseExcel', () => {
     expect(parsed.headerRowIndex).toBe(2);
     expect(parsed.headers).toEqual(['性别', 'qq', '家庭情况']);
     expect(parsed.rows).toHaveLength(2);
+    expect(parsed.rowNumbers).toEqual([3, 4]);
     expect(parsed.rows[0]['性别']).toBe('女');
     expect(parsed.rows[1]['qq']).toBeNull();
   });
@@ -67,6 +68,7 @@ describe('parseExcel', () => {
     ]);
     const parsed = parseExcel(buf);
     expect(parsed.rows).toHaveLength(2);
+    expect(parsed.rowNumbers).toEqual([2, 4]);
   });
 
   it('提取学校名称与期数', () => {
@@ -93,6 +95,19 @@ describe('parseExcel', () => {
       ['内容五'],
       ['内容六'],
     ]);
+    expect(() => parseExcel(buf)).toThrow('表头');
+  });
+
+  it('表头重复时抛错', () => {
+    const buf = workbookFromMatrix([
+      ['性别', '性别'],
+      ['女', '男'],
+    ]);
+    expect(() => parseExcel(buf)).toThrow('表头重复');
+  });
+
+  it('空工作表时抛错', () => {
+    const buf = workbookFromMatrix([]);
     expect(() => parseExcel(buf)).toThrow('表头');
   });
 });
