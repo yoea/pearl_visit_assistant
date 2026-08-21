@@ -3852,6 +3852,7 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 6. Task 7 规格审查小观察：anonymizer.test.ts 用例 4 标题称「缺排名或年级人数时 null」但仅断言缺年级人数场景，缺排名→null 分支未被断言（实现本身正确）；顺手补缺排名断言。
 > 7. Task 7 质量审查 Minor：nameIndex 防泄漏当前依赖 `JSON.stringify(Map)==='{}'` 的 JS 语义（structuredClone 会完整克隆 Map）——最终验证加一条 `JSON.stringify(output)` 不含姓名的断言钉死不变量。
 > 8. Task 7 复审非阻断观察（可选加固）：setField 守卫用 `in` 运算符含原型链，理论上一行改 `Object.prototype.hasOwnProperty.call(EMPTY_STUDENT, key)` 彻底闭合（实际仅手工伪造 MappedColumn 才可达）。
+> 9. Task 8 复审 Minor 三则：① 两次扫描一致性用例当前用无命中 payload（cleanRequest），exec 对不匹配串自动重置 lastIndex，删掉显式重置也不会失败——换命中 payload（如 id-card 版）才能真正钉住 lastIndex 不变量；② scanner.ts 中 `JSON.stringify` 对 BigInt/循环引用仍会抛（payload 类型固定 AnalysisRequest 不可达）——try/catch 返回 malformed-payload 或在注释注明；③ `students:[null]` 用例补 `expect(r.passed).toBe(true)` 钉住放行语义。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
