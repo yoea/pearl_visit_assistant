@@ -1488,7 +1488,7 @@ export function anonymize(
 - [ ] **Step 5: 运行确认通过**
 
 Run: `npx vitest run tests/anonymizer.test.ts`
-Expected: PASS — 7 个用例全部通过。
+Expected: PASS — 11 个用例全部通过（7 原始 + 4 修复轮新增）。
 
 - [ ] **Step 6: Commit**
 
@@ -1498,6 +1498,8 @@ git commit -m "feat: Anonymizer 脱敏组装器（匿名ID/排名泛化/文本�
 ```
 
 > **执行记录（控制器授权的计划偏离）**：① `anonymize` 入参为 `readonly RawStudentRecord[]`（与 `RawStore.snapshot()` 返回值一致，杜绝流水线内意外修改原始数据）；② 「叙事字段内嵌 PII 被掩码」期望为 `父亲电话[已隐藏]，[已隐藏]`（Task 6 整句掩码裁决联动）；③ 独立函数 `collectNameBlacklist` 签名同步放宽为 `readonly RawStudentRecord[]`（否则 tsc 报 TS2345：readonly 参数不能传给可变参数；该函数只读 records，放宽零风险），raw-store.ts 一并纳入本任务提交。
+>
+> **修复轮（代码质量审查后，控制器裁决）**：④ Important（计划级缺口）：nameIndex 匹配写死 `normalizedHeader === '珍珠生姓名'`，别名表头（姓名/学生姓名，FORBIDDEN_IDENTITY_ALIASES 明确支持）下姓名索引静默失效、Task 14 本地姓名定位失效。**裁决：改为 `NAME_BEARING_ALIASES.includes(c.normalizedHeader)`（保留 `reason === 'identity'` 过滤，天然排除第三方姓名列），补别名表头测试。** ⑤ Minor 采纳：`setField` 加运行时守卫 `if (!(key in EMPTY_STUDENT)) return;`——canonicalKey 闭集漂移时未知键绝不物化进输出（纵深防御），补守卫测试。⑥ Minor 采纳：`NUMBER_KEYS` 改 `as const satisfies readonly (keyof AnonymizedStudent)[]` + 照 field-policies.ts:106-114 模式加双向编译期一致性断言 `_numberKeysConsistency`（锁数值字段清单与类型漂移）。⑦ Minor 采纳：排名区间调用点补 `rank > 0`（0/负数排名损坏数据不得落「前5%」），补无效值测试 + 空记录零统计测试。⑧ Minor 弃用（记录备查）：`byAction` 参数收窄、删除 sensitiveCount 内「冗余」drop 判断（规格审查已实测该判断为 TS 联合收窄所必需，删之编译即错）、gradeSize 列查找循环外提升、EMPTY_STUDENT freeze——收益低于扰动，不采纳。⑨ 转交 Task 15：`JSON.stringify(output)` 不含姓名的断言（nameIndex 防泄漏目前依赖 Map 序列化为 `{}` 的 JS 语义）。
 
 ---
 
@@ -3846,6 +3848,7 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 4. Task 5 遗留：NAME_BEARING_ALIASES 不变量仅单向；snapshot 测试中 cast 注释；「数组级副本」文档注释精度；
 > 5. Task 4 遗留：`raw:false` 精度语义注释（格式化差异说明）；单 sheet 解析说明（首张表）；错误包装；LF 警告为良性。
 > 6. Task 7 规格审查小观察：anonymizer.test.ts 用例 4 标题称「缺排名或年级人数时 null」但仅断言缺年级人数场景，缺排名→null 分支未被断言（实现本身正确）；顺手补缺排名断言。
+> 7. Task 7 质量审查 Minor：nameIndex 防泄漏当前依赖 `JSON.stringify(Map)==='{}'` 的 JS 语义（structuredClone 会完整克隆 Map）——最终验证加一条 `JSON.stringify(output)` 不含姓名的断言钉死不变量。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
