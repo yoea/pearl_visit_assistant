@@ -1516,6 +1516,14 @@ describe('scanPayload', () => {
     expect(scanPayload(cleanRequest, new Set()).passed).toBe(true);
   });
 
+  it('学校名含省市不误报（校名属学校级元数据，经用户同意发送）', () => {
+    const r = scanPayload(
+      { ...cleanRequest, meta: { schoolName: '大庆市杜尔伯特蒙古族自治县第一中学', cohort: '2026级' } },
+      new Set(),
+    );
+    expect(r.passed).toBe(true);
+  });
+
   it('叙事文本含身份证号 → 拒绝且片段已掩码', () => {
     const r = scanPayload(
       { ...cleanRequest, students: [{ ...cleanStudent, familySituation: '证件110101200001011234' }] },
@@ -1606,6 +1614,7 @@ function walk(
   path: string,
   key: string,
   isStructuredRegion: boolean,
+  isSchoolName: boolean,
   findings: SecurityFinding[],
 ): void {
   if (node == null) return;
@@ -1626,14 +1635,17 @@ function walk(
       }
     }
     // 地址子句检测（与清洗器同源逻辑）：同一字符串内地址词 ≥2 个 → 命中
-    const addressTokens = node.match(ADDRESS_TOKENS);
-    if (addressTokens && addressTokens.length >= 2) {
-      findings.push({
-        category: 'address',
-        label: '详细地址',
-        field: path,
-        snippet: maskSnippet(node.trim()),
-      });
+    // 学校名豁免：校名常含省市县字样，属学校级元数据（经用户同意发送）
+    if (!isSchoolName) {
+      const addressTokens = node.match(ADDRESS_TOKENS);
+      if (addressTokens && addressTokens.length >= 2) {
+        findings.push({
+          category: 'address',
+          label: '详细地址',
+          field: path,
+          snippet: maskSnippet(node.trim()),
+        });
+      }
     }
     return;
   }
@@ -1655,12 +1667,19 @@ function walk(
     return;
   }
   if (Array.isArray(node)) {
-    node.forEach((item, i) => walk(item, `${path}[${i}]`, key, false, findings));
+    node.forEach((item, i) => walk(item, `${path}[${i}]`, key, false, false, findings));
     return;
   }
   if (typeof node === 'object') {
     for (const [k, v] of Object.entries(node)) {
-      walk(v, path === '' ? k : `${path}.${k}`, k, STRUCTURED_REGION_KEYS.has(k), findings);
+      walk(
+        v,
+        path === '' ? k : `${path}.${k}`,
+        k,
+        STRUCTURED_REGION_KEYS.has(k),
+        k === 'schoolName',
+        findings,
+      );
     }
   }
 }
@@ -1686,7 +1705,7 @@ export function scanPayload(payload: unknown, nameBlacklist: Set<string>): Secur
   }
 
   // 2. 字段值规则扫描
-  walk(payload, '', '', false, findings);
+  walk(payload, '', '', false, false, findings);
 
   // 3. 禁止字段名检查
   const keys = [...Object.keys(payload as object)];
@@ -1713,7 +1732,7 @@ export function scanPayload(payload: unknown, nameBlacklist: Set<string>): Secur
 - [ ] **Step 4: 运行确认通过**
 
 Run: `npx vitest run tests/scanner.test.ts`
-Expected: PASS — 8 个用例全部通过。
+Expected: PASS — 10 个用例全部通过。
 
 - [ ] **Step 5: Commit**
 
@@ -1721,6 +1740,8 @@ Expected: PASS — 8 个用例全部通过。
 git add src/security/scanner.ts tests/scanner.test.ts
 git commit -m "feat: SecurityScanner 发送前安全硬闸（规则+姓名黑名单+禁止字段名）"
 ```
+
+> **执行记录（控制器裁决的计划偏离）**：① 计划 Step 4 用例数笔误（实际 1+8=9，与 Task 4 同类），新增「学校名含省市不误报」用例后共 **10 个**；② 真实校名常含省市县区字样（如「大庆市杜尔伯特蒙古族自治县第一中学」），按原实现对其做地址子句扫描会误报阻塞发送——**裁决：`walk` 增加 `isSchoolName` 参数，`schoolName` 豁免地址子句检测，其余规则照常扫描（纵深防御不削弱）**。学校名是经用户确认发送的学校级元数据。
 
 ---
 
