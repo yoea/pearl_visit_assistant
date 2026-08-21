@@ -1,11 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { classifyHeader, normalizeHeader } from '../src/anonymization/field-policies';
+import {
+  classifyHeader,
+  FIELD_POLICIES,
+  FORBIDDEN_IDENTITY_ALIASES,
+  INTERNAL_ALIASES,
+  isKnownHeaderName,
+  normalizeHeader,
+  THIRD_PARTY_ALIASES,
+} from '../src/anonymization/field-policies';
 import { mapFields } from '../src/anonymization/field-mapper';
 
 describe('normalizeHeader', () => {
   it('去空格并转小写（兼容真实文件中的小写 qq）', () => {
     expect(normalizeHeader('  QQ ')).toBe('qq');
     expect(normalizeHeader('家庭情况')).toBe('家庭情况');
+  });
+
+  it('压缩内部空格', () => {
+    expect(normalizeHeader('珍珠生 姓名')).toBe('珍珠生姓名');
   });
 });
 
@@ -59,5 +71,35 @@ describe('mapFields', () => {
     expect(mappedColumns[0].canonicalKey).toBe('gender');
     expect(mappedColumns[1].action).toEqual({ action: 'drop', reason: 'unknown' });
     expect(schoolNameColumn).toBe('学校名称');
+  });
+
+  it('识别期数列（无期数列返回 null）', () => {
+    expect(mapFields(['期数']).cohortColumn).toBe('期数');
+    expect(mapFields(['性别', '未知列', '学校名称']).cohortColumn).toBeNull();
+  });
+});
+
+describe('isKnownHeaderName', () => {
+  it('已知字段名判定（供表头行检测打分）', () => {
+    expect(isKnownHeaderName('性别')).toBe(true);
+    expect(isKnownHeaderName('未来新增字段XYZ')).toBe(false);
+    expect(isKnownHeaderName('qq')).toBe(true); // 身份别名是「已知」分类，不属于未知
+  });
+});
+
+describe('字段策略表不变量（安全红线）', () => {
+  const policyAliases = Object.values(FIELD_POLICIES).flatMap((entry) => entry.aliases);
+  const tables = [policyAliases, FORBIDDEN_IDENTITY_ALIASES, THIRD_PARTY_ALIASES, INTERNAL_ALIASES];
+
+  it('四个表两两交集为空：删除表优先才与原顺序等价，且不会误保留身份别名', () => {
+    for (let i = 0; i < tables.length; i++) {
+      for (let j = i + 1; j < tables.length; j++) {
+        for (const a of tables[i]) expect(tables[j]).not.toContain(a);
+      }
+    }
+  });
+
+  it('各表内部无重复别名', () => {
+    for (const table of tables) expect(new Set(table).size).toBe(table.length);
   });
 });

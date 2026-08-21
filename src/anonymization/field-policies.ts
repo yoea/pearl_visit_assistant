@@ -75,9 +75,8 @@ export function normalizeHeader(header: string): string {
 
 export function classifyHeader(header: string): { canonicalKey: CanonicalKey | null; action: FieldAction } {
   const h = normalizeHeader(header);
-  for (const [key, entry] of Object.entries(FIELD_POLICIES)) {
-    if (entry.aliases.includes(h)) return { canonicalKey: key as CanonicalKey, action: entry.action };
-  }
+  // 删除表优先（fail-safe）：即使未来误将「姓名」等身份别名加进策略表，
+  // 也绝不会 fail-open 把敏感字段保留并发送。四表当前零交集，行为与原顺序等价。
   if (FORBIDDEN_IDENTITY_ALIASES.includes(h)) {
     return { canonicalKey: null, action: { action: 'drop', reason: 'identity' } };
   }
@@ -86,6 +85,9 @@ export function classifyHeader(header: string): { canonicalKey: CanonicalKey | n
   }
   if (INTERNAL_ALIASES.includes(h)) {
     return { canonicalKey: null, action: { action: 'drop', reason: 'internal' } };
+  }
+  for (const [key, entry] of Object.entries(FIELD_POLICIES)) {
+    if (entry.aliases.includes(h)) return { canonicalKey: key as CanonicalKey, action: entry.action };
   }
   return { canonicalKey: null, action: { action: 'drop', reason: 'unknown' } };
 }
