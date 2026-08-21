@@ -1225,6 +1225,7 @@ git commit -m "feat: 安全规则集（单一来源）与叙事文本清洗器"
 
 **Files:**
 - Create: `src/utils/number.ts`, `src/anonymization/anonymizer.ts`
+- Modify: `src/anonymization/raw-store.ts`（授权偏离：独立函数 `collectNameBlacklist` 参数放宽为 `readonly RawStudentRecord[]`）
 - Test: `tests/anonymizer.test.ts`
 
 - [ ] **Step 1: 写失败测试 tests/anonymizer.test.ts**
@@ -1492,9 +1493,11 @@ Expected: PASS — 7 个用例全部通过。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/utils/number.ts src/anonymization/anonymizer.ts tests/anonymizer.test.ts
+git add src/utils/number.ts src/anonymization/anonymizer.ts src/anonymization/raw-store.ts tests/anonymizer.test.ts
 git commit -m "feat: Anonymizer 脱敏组装器（匿名ID/排名泛化/文本清洗）"
 ```
+
+> **执行记录（控制器授权的计划偏离）**：① `anonymize` 入参为 `readonly RawStudentRecord[]`（与 `RawStore.snapshot()` 返回值一致，杜绝流水线内意外修改原始数据）；② 「叙事字段内嵌 PII 被掩码」期望为 `父亲电话[已隐藏]，[已隐藏]`（Task 6 整句掩码裁决联动）；③ 独立函数 `collectNameBlacklist` 签名同步放宽为 `readonly RawStudentRecord[]`（否则 tsc 报 TS2345：readonly 参数不能传给可变参数；该函数只读 records，放宽零风险），raw-store.ts 一并纳入本任务提交。
 
 ---
 
