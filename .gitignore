@@ -1,0 +1,13 @@
+# 依赖与构建
+node_modules/
+dist/
+
+# 隐私红线：examples/ 存放真实学生数据 Excel，绝不进入版本库
+examples/
+
+# 本地与临时文件
+.scratch/
+*.local
+.env
+.env.*
+.DS_Store
