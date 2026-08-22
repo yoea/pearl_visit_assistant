@@ -2739,6 +2739,9 @@ git add src/report/ src/utils/field-labels.ts src/utils/download.ts tests/report
 git commit -m "feat: 报告生成、Markdown 序列化与下载工具"
 ```
 
+**执行记录：**
+- 提交 dedc8c2（7 文件，纯增量），3/3 + 全量 89/89 + **tsc 归零**（最后一个已知 TS2307 因 report/types.ts 落地解决）。规范复审 ✅（实现者关于 analysis-service.test.ts 含报告断言的表述确认属误读——该文件为 Task 9 的 3 个 AnalysisService 用例，未被本任务改动，无合规影响）。质量复审 **Ready to merge: Yes**，无 Critical/Important；6 则 Minor 转 Task 15 待办 18-22（标签类型收紧、Markdown 转义、revokeObjectURL 延迟、title 插值、空态补齐）。
+
 ---
 
 ## Task 12: 使用统计接口（内存实现）
@@ -3862,6 +3865,11 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 15. Task 10 质量审查 Minor（可选重构）：学校级/学生级两处 8 因素表重复定义有漂移风险——提取共享 FACTOR_DEFS（evidence 按上下文函数生成），勿过度抽象。
 > 16. Task 10 质量审查 Minor：mock-provider.ts 低收入因素 evidence 中 `perCapitaIncome ?? '未知'` 为死分支（hit 门控已保证非 null）——删除或 TS 收窄写法。
 > 17. Task 10 质量审查 Minor（v1 可接受，仅提示）：`difficultyDistribution` 混合两种粒度（difficultyLevel 级别串 vs 关键词标签串）——Task 15 真实数据走查时留意报告展示效果。
+> 18. Task 11 质量审查 Minor：`STUDENT_FIELD_LABELS` 类型收紧为 `Record<keyof AnonymizedStudent, string>`（35 键不变量改为编译期强制；Task 14 计划代码已验证兼容）——`DROP_REASON_LABELS` 同理可键化。
+> 19. Task 11 质量审查 Minor（计划级）：markdown.ts 动态值无 Markdown 转义（叙事文本可含 `#`/`*`/换行，仅影响本地 .md 展示）——加 `escapeMdLine` 辅助（转义行首 `#`/`*`/`>`/换行）应用于 reasonSummary/familySummary/evidence/basicInfo.value + 1 个对抗文本测试。
+> 20. Task 11 质量审查 Minor：download.ts `URL.revokeObjectURL` 紧跟 click 同步调用——改 `setTimeout(..., 0)` 防御旧引擎。
+> 21. Task 11 质量审查 Minor：`Report.title` 未被 reportToMarkdown 读取（标题字面量重复，改 title 会静默分叉）——`#` 行改插值 `report.title`。
+> 22. Task 11 质量审查 Minor：suggestedQuestions/basicInfo/suggestions 空态缺失（未来 DeepSeek provider 可能返回空数组，留悬空标题）——各补「- 暂无。」；顺带补空学生列表（0 学生 → 0.0% 不崩）与空分布兜底文案测试。（DeepSeek 结论守卫属待办 10②，已覆盖。）
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
