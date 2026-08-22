@@ -4014,6 +4014,14 @@ git add scripts/generate-sample-xlsx.mjs README.md
 git commit -m "docs: README 与合成示例数据生成脚本"
 ```
 
+**执行记录：**
+- 提交拆为两个（控制器裁决，计划 Step 6 的 git add 范围过窄）：a76ec2f（26 文件：15 src + 11 tests，待办 1-25）+ 0cab7de（README + scripts/generate-sample-xlsx.mjs）。119/119（+24 测试、+1 文件 tests/question-templates.test.ts）+ build 0 错误 + tsc 0 错误。待办 3/10①②/17/23③/24②/25⑥⑦ 按裁决跳过或仅注记。
+- 派发前控制器预检裁决：待办 25② 不可从 nameIndex 派生黑名单（collectNameBlacklist 按标点拆分含教师/审批人姓名，值集不同）→ anonymize 加可选第三参数 + App 单点提取传入；待办 12 拒绝 Math.max(5,…)（slice 无法无中生有）→ 断言无条件模板数 ≥ 5 不变量；生成脚本预授权补 mkdirSync('examples')；提交拆分。
+- 规范复审 ✅（5 自报偏离全部接受：familySummary parts 统一 join('。')（分隔符 '，'→'。' 纯装饰，自报「逐字一致」不精确已记录）；App 删死代码 `?? 1`；escapeMdLine 额外转义行首 '-'；hasIllness 否定前缀逐字段判定（比整段拼接更严格，无假阴性回退）；markdown 注释避开字面 `*/`）。rules.ts/scanner.ts/anonymizer.ts 改动经核验不放宽任何安全语义（CLAUSE 正则单一来源行为逐字等价、try/catch 新增 fail-closed 路径、hasOwnProperty 守卫只严不松、可选黑名单缺省与原行为等价）；field-policies.ts 未动。
+- 质量复审 **Ready to merge: Yes**（0 Critical / 0 Important）。Minor 五则（无后续任务可转，记录于此）：① markdown.ts difficultyDistribution 键与 suggestions/verificationPoints/cautions 动态点未转义（今日 mock 静态；DeepSeek 接入后须套 escapeMdLine）；② hasDebt/hasElderly 前缀否定反向误伤（「无抵押贷款」等）与「暂无」局限，注释补充；③ scanPayload/AnalysisService.analyze 的 Set 参数可统一为 ReadonlySet；④ SecurityStep finding.label 未展示；⑤ familySummary join('。') 后无尾句号。
+- 待办 10①② 前向验收标准（DeepSeek 接入时：网络 provider 仅经工厂内部构造、结论守卫可执行化）保留有效，代码注释已标注。
+- Step 5 手工走查清单留给用户执行。
+
 ---
 
 ## 完成定义（DoD）
