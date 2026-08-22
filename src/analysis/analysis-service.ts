@@ -3,7 +3,7 @@ import type { AnalysisRequest } from '../types/student';
 import type { AnalysisProvider, AnalysisResult } from './provider';
 
 export class SecurityViolationError extends Error {
-  constructor(public readonly findings: SecurityFinding[]) {
+  constructor(public readonly findings: ReadonlyArray<SecurityFinding>) {
     super('发送前安全检查未通过');
     this.name = 'SecurityViolationError';
   }
@@ -11,7 +11,9 @@ export class SecurityViolationError extends Error {
 
 /**
  * 唯一发请求处。安全硬闸在此执行：UI 无法绕过。
- * 未来接入 DeepSeek 时必须继续通过本服务发送。
+ * 未来接入 DeepSeek 时必须继续通过本服务发送（硬闸自动生效，UI 不得直连 provider）；
+ * 同时必须遵守两条红线：① UI 无法绕过本服务直发请求（仅本服务构造请求体）；
+ * ② AI 输出绝不包含「通过/淘汰」类结论（需在提示词与输出校验中显式实现）。
  */
 export class AnalysisService {
   constructor(private readonly provider: AnalysisProvider) {}

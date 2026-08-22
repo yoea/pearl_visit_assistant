@@ -71,11 +71,18 @@ describe('anonymize', () => {
     expect(out.nameIndex.get('student-001')).toBe('测试甲');
   });
 
+  it('nameIndex 不进入序列化输出（JSON.stringify(Map) 为空对象，真实姓名绝不泄漏）', () => {
+    const out = anonymize([rec({ 珍珠生姓名: '测试甲' })], mappedColumns);
+    expect(JSON.stringify(out)).not.toContain('测试甲');
+  });
+
   it('排名泛化为区间；缺排名或年级人数时输出 null', () => {
     const withRank = anonymize([rec({ 录取高中全校排名: '160', 全年级人数: '923' })], mappedColumns);
     expect(withRank.students[0].admissionRankBand).toBe('15%-30%');
     const noGrade = anonymize([rec({ 录取高中全校排名: '160' })], mappedColumns);
     expect(noGrade.students[0].admissionRankBand).toBeNull();
+    const noRank = anonymize([rec({ 全年级人数: '923' })], mappedColumns);
+    expect(noRank.students[0].admissionRankBand).toBeNull();
   });
 
   it('数字字段解析（含带单位字符串）', () => {
@@ -90,6 +97,15 @@ describe('anonymize', () => {
       mappedColumns,
     );
     expect(out.students[0].familySituation).toBe(`父亲电话${MASK}，${MASK}`);
+  });
+
+  it('显式提供的姓名黑名单被复用（调用方只计算一次）', () => {
+    const out = anonymize(
+      [rec({ 家庭情况: '家访教师刘玉坤曾来访' })],
+      mappedColumns,
+      new Set(['刘玉坤']),
+    );
+    expect(out.students[0].familySituation).toBe(`家访教师${MASK}曾来访`);
   });
 
   it('统计数字正确', () => {

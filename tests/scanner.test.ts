@@ -132,14 +132,34 @@ describe('scanPayload', () => {
     expect(r.findings[0].category).toBe('malformed-payload');
   });
 
-  it('students 含 null 元素不抛异常', () => {
+  it('students 含 null 元素不抛异常（按透传语义通过）', () => {
     const r = scanPayload({ ...cleanRequest, students: [null] }, new Set());
-    expect(r).toHaveProperty('passed');
+    expect(r.passed).toBe(true);
   });
 
-  it('连续两次扫描结果一致（共享正则状态不变量）', () => {
-    const a = JSON.stringify(scanPayload(cleanRequest, new Set(['测试甲'])));
-    const b = JSON.stringify(scanPayload(cleanRequest, new Set(['测试甲'])));
+  it('连续两次扫描结果一致（共享正则状态不变量；命中后 lastIndex 亦复位）', () => {
+    // 用命中 payload：exec 命中后 lastIndex 停留在匹配末尾，若未显式复位第二次扫描将漏报
+    const hit = {
+      ...cleanRequest,
+      students: [{ ...cleanStudent, familySituation: '证件110101200001011234' }],
+    };
+    const a = JSON.stringify(scanPayload(hit, new Set()));
+    const b = JSON.stringify(scanPayload(hit, new Set()));
     expect(a).toBe(b);
+    expect(a).toContain('id-card');
+  });
+
+  it('BigInt payload 序列化异常 fail-closed（不抛异常，按结构异常拒绝）', () => {
+    const r = scanPayload({ students: [{ x: 1n }] }, new Set());
+    expect(r.passed).toBe(false);
+    expect(r.findings[0].category).toBe('malformed-payload');
+  });
+
+  it('循环引用 payload fail-closed', () => {
+    const circ: Record<string, unknown> = { students: [] };
+    circ.self = circ;
+    const r = scanPayload(circ, new Set());
+    expect(r.passed).toBe(false);
+    expect(r.findings[0].category).toBe('malformed-payload');
   });
 });

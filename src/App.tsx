@@ -9,8 +9,8 @@ import { AnalysisService } from './analysis/analysis-service';
 import { MockAnalysisProvider } from './analysis/mock-provider';
 import { generateReport } from './report/generator';
 import { InMemoryUsageStats } from './stats/usage-stats';
-import type { CellValue, RawStudentRecord } from './types/student';
-import type { ParsedState } from './types/pipeline';
+import type { RawStudentRecord } from './types/student';
+import type { ParsedState, Stage } from './types/pipeline';
 import Stepper from './components/Stepper';
 import ImportStep from './components/ImportStep';
 import MappingStep from './components/MappingStep';
@@ -22,7 +22,8 @@ import ReportStep from './components/ReportStep';
 const usageStats = new InMemoryUsageStats();
 const analysisService = new AnalysisService(new MockAnalysisProvider());
 
-const STAGE_TO_STEP: Record<string, number> = {
+/** 阶段 → 步骤条序号（与 Stage 联合类型编译期锁定，漏配即报错） */
+const STAGE_TO_STEP: Record<Stage, number> = {
   idle: 1, parsed: 2, anonymized: 3, scanned: 5, analyzed: 6,
 };
 
@@ -41,7 +42,7 @@ export default function App() {
       const parsed = parseExcel(buffer);
       const records: RawStudentRecord[] = parsed.rows.map((values, i) => ({
         sourceRow: parsed.rowNumbers[i], // Task 4 保留的真实工作表行号（跳过空行后仍准确）
-        values: values as Record<string, CellValue>,
+        values,
       }));
       rawStore.setRecords(records);
       usageStats.record('imported', { studentCount: records.length });
@@ -64,8 +65,10 @@ export default function App() {
 
   const handleAnonymize = useCallback(() => {
     if (state.stage !== 'parsed') return;
+    // 姓名黑名单只提取一次（O(n)），脱敏/扫描/分析全程复用；
+    // 不能派生自 nameIndex：教师/审批人列可含多个姓名（按标点拆分），与学生全名集不同。
     nameBlacklistRef.current = rawStore.collectNameBlacklist();
-    const output = anonymize(rawStore.snapshot(), state.mappedColumns);
+    const output = anonymize(rawStore.snapshot(), state.mappedColumns, nameBlacklistRef.current);
     setAnonymizedView('stats');
     dispatch({ type: 'ANONYMIZE_SUCCEEDED', output });
   }, [state]);
@@ -78,7 +81,7 @@ export default function App() {
   }, [state]);
 
   const handleAnalyze = useCallback(async () => {
-    if (state.stage !== 'scanned' || !state.scan.passed) return;
+    if (state.stage !== 'scanned' || !state.scan.passed || analyzing) return;
     setAnalyzing(true);
     setAnalyzeError(undefined);
     try {
@@ -100,7 +103,7 @@ export default function App() {
     } finally {
       setAnalyzing(false);
     }
-  }, [state]);
+  }, [state, analyzing]);
 
   const handleReset = useCallback(() => {
     rawStore.clear();
@@ -121,7 +124,7 @@ export default function App() {
             <p className="text-xs text-slate-500">原始学生信息仅在本地浏览器处理，不存储、不上传。</p>
           </div>
           <div className="mt-3">
-            <Stepper current={STAGE_TO_STEP[state.stage] ?? 1} />
+            <Stepper current={STAGE_TO_STEP[state.stage]} />
           </div>
         </div>
       </header>
@@ -132,13 +135,12 @@ export default function App() {
           <AnonymizeStep output={state.output} onNext={() => setAnonymizedView('preview')} />
         )}
         {state.stage === 'anonymized' && anonymizedView === 'preview' && (
-          <PreviewStep output={state.output} onNext={handleScan} />
+          <PreviewStep output={state.output} onNext={handleScan} onBack={() => setAnonymizedView('stats')} />
         )}
         {state.stage === 'scanned' && (
           <SecurityStep
             output={state.output}
             scan={state.scan}
-            onScan={handleScan}
             onAnalyze={() => void handleAnalyze()}
             analyzing={analyzing}
             error={analyzeError}

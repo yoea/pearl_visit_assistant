@@ -7,6 +7,7 @@ import CheckItem from './ui/CheckItem';
 const CHECK_LABELS = [
   { key: 'id-card', label: '身份证号' },
   { key: 'mobile', label: '手机号' },
+  { key: 'landline', label: '固定电话' },
   { key: 'name-blacklist', label: '姓名' },
   { key: 'name', label: '姓名模式' },
   { key: 'email', label: '邮箱' },
@@ -15,20 +16,21 @@ const CHECK_LABELS = [
   { key: 'address', label: '详细地址' },
   { key: 'pearl-id', label: '珍珠号' },
   { key: 'forbidden-field', label: '其他高风险个人身份信息' },
+  { key: 'malformed-payload', label: '数据异常' },
 ] as const;
 
 export default function SecurityStep({
-  output, scan, onScan, onAnalyze, analyzing, error, onReset,
+  output, scan, onAnalyze, analyzing, error, onReset,
 }: {
   output: AnonymizationOutput;
-  scan: SecurityScanResult | null;
-  onScan: () => void;
+  /** scanned 阶段一定携带扫描结果（pipeline 判别联合保证），无「未扫描」态 */
+  scan: SecurityScanResult;
   onAnalyze: () => void;
   analyzing: boolean;
   error?: string;
   onReset: () => void;
 }) {
-  const hitKeys = new Set(scan?.findings.map((f) => f.category) ?? []);
+  const hitKeys = new Set(scan.findings.map((f) => f.category));
 
   return (
     <Card>
@@ -39,9 +41,7 @@ export default function SecurityStep({
       </p>
 
       <div className="mt-4">
-        {!scan ? (
-          <Button onClick={onScan}>运行安全检查</Button>
-        ) : scan.passed ? (
+        {scan.passed ? (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
             <p className="text-sm font-medium text-emerald-800">✓ 未发现禁止发送的个人身份信息</p>
             <ul className="mt-3 space-y-1">

@@ -69,4 +69,22 @@ describe('AnalysisService', () => {
       expect((e as SecurityViolationError).findings.length).toBeGreaterThan(0);
     }
   });
+
+  it('provider 抛出的异常原样透传（不被安全层吞掉/包装）', async () => {
+    const boom = new Error('provider 内部错误');
+    const provider: AnalysisProvider = {
+      name: 'stub',
+      analyze: vi.fn(async () => { throw boom; }),
+    };
+    const service = new AnalysisService(provider);
+    await expect(service.analyze(cleanRequest, new Set())).rejects.toBe(boom);
+  });
+
+  it('空黑名单时正常通过并委托 provider', async () => {
+    const provider: AnalysisProvider = { name: 'stub', analyze: vi.fn(async () => fakeResult) };
+    const service = new AnalysisService(provider);
+    const result = await service.analyze(cleanRequest, new Set());
+    expect(provider.analyze).toHaveBeenCalledWith(cleanRequest);
+    expect(result).toBe(fakeResult);
+  });
 });

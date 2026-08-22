@@ -23,7 +23,11 @@ export class RawStore {
     return [...new Set(this.records.flatMap((r) => Object.keys(r.values)))];
   }
 
-  /** 仅供脱敏流水线（anonymize）使用，禁止传入 UI 组件；返回副本，外部修改不影响仓库 */
+  /**
+   * 仅供脱敏流水线（anonymize）使用，禁止传入 UI 组件。
+   * 返回数组级副本：增删返回数组的元素不影响仓库；但各记录的 values 对象仍为共享引用，
+   * 调用方不得就地修改 values（流水线只读消费）。
+   */
   snapshot(): readonly RawStudentRecord[] {
     return [...this.records];
   }

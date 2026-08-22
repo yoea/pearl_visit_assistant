@@ -22,11 +22,20 @@ export class InMemoryUsageStats implements UsageStats {
   private totalStudents = 0;
 
   record(event: UsageEvent, meta?: { studentCount?: number }): void {
-    if (event === 'imported') {
-      this.imports += 1;
-      this.totalStudents += meta?.studentCount ?? 0;
-    } else if (event === 'analysisCompleted') {
-      this.analyses += 1;
+    switch (event) {
+      case 'imported':
+        this.imports += 1;
+        this.totalStudents += meta?.studentCount ?? 0;
+        break;
+      case 'analysisCompleted':
+        this.analyses += 1;
+        break;
+      default: {
+        // 白名单外事件故意静默忽略（fail-safe 语义，运行时绝不抛异常）；
+        // never 标注保证编译期穷尽当前 UsageEvent 联合类型（新增事件时在此显式处理）。
+        const _unhandled: never = event;
+        void _unhandled;
+      }
     }
   }
 

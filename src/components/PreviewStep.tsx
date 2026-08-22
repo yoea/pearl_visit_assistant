@@ -10,10 +10,11 @@ const ROW_COLUMNS: (keyof AnonymizedStudent)[] = [
 ];
 
 export default function PreviewStep({
-  output, onNext,
+  output, onNext, onBack,
 }: {
   output: AnonymizationOutput;
   onNext: () => void;
+  onBack: () => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const { students } = output;
@@ -44,7 +45,8 @@ export default function PreviewStep({
           </tbody>
         </table>
       </div>
-      <div className="mt-4">
+      <div className="mt-4 flex gap-2">
+        <Button variant="secondary" onClick={onBack}>返回统计</Button>
         <Button onClick={onNext}>进入安全检查</Button>
       </div>
     </Card>

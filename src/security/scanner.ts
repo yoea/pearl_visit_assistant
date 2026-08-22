@@ -1,4 +1,4 @@
-import { ADDRESS_TOKENS, CLAUSE_SPLIT, RULES, STRUCTURED_REGION_KEYS, type RuleCategory } from './rules';
+import { ADDRESS_TOKENS, CLAUSE_SEP_CHAR, CLAUSE_SPLIT, RULES, STRUCTURED_REGION_KEYS, type RuleCategory } from './rules';
 
 export interface SecurityFinding {
   category: RuleCategory | 'name-blacklist' | 'forbidden-field' | 'malformed-payload';
@@ -54,7 +54,7 @@ function walk(
     // （均经用户确认发送）；其余规则照常扫描
     if (!isSchoolName && !isStructuredRegion) {
       for (const seg of node.split(CLAUSE_SPLIT)) {
-        if (CLAUSE_SPLIT.test(seg)) continue;
+        if (CLAUSE_SEP_CHAR.test(seg)) continue;
         const tokens = new Set(seg.match(ADDRESS_TOKENS) ?? []);
         if (tokens.size >= 2) {
           findings.push({
@@ -119,7 +119,16 @@ export function scanPayload(payload: unknown, nameBlacklist: Set<string>): Secur
   const findings: SecurityFinding[] = [];
 
   // 1. 姓名黑名单：全 payload 精确匹配
-  const json = JSON.stringify(payload);
+  let json: string;
+  try {
+    json = JSON.stringify(payload);
+  } catch {
+    // fail-closed：序列化异常（BigInt/循环引用等）一律按结构异常拒绝发送
+    return {
+      passed: false,
+      findings: [{ category: 'malformed-payload', label: 'payload 序列化异常，已拒绝发送', field: '(payload)', snippet: '****' }],
+    };
+  }
   for (const name of nameBlacklist) {
     // 单字姓名跳过：与清洗器一致，避免常见单字（如「宁」「省」）误报
     if (name.length >= 2 && json.includes(name)) {

@@ -17,4 +17,19 @@ describe('InMemoryUsageStats', () => {
     expect(Object.keys(snap).sort()).toEqual(['analyses', 'imports', 'totalStudents']);
     expect(JSON.stringify(snap)).not.toContain('学生');
   });
+
+  it('imported 缺 meta 时人数按 0 计（?? 0 默认值）', () => {
+    const stats = new InMemoryUsageStats();
+    stats.record('imported');
+    expect(stats.getSnapshot()).toEqual({ imports: 1, analyses: 0, totalStudents: 0 });
+  });
+
+  it('快照为副本：修改快照不影响后续快照', () => {
+    const stats = new InMemoryUsageStats();
+    stats.record('imported', { studentCount: 5 });
+    const snap = stats.getSnapshot();
+    snap.imports = 999;
+    snap.totalStudents = 0;
+    expect(stats.getSnapshot()).toEqual({ imports: 1, analyses: 0, totalStudents: 5 });
+  });
 });

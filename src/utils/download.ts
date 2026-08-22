@@ -6,5 +6,6 @@ export function downloadTextFile(filename: string, content: string, mime = 'text
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // 延迟回收：同步 revoke 在部分浏览器会取消下载（Task 11 复审）
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

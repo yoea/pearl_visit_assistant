@@ -54,6 +54,14 @@ describe('scrubText', () => {
     expect(scrubText('班主任张老师来访', noBlacklist)).toBe(`班主任${MASK}来访`);
   });
 
+  it('复姓姓名模式掩码（欧阳老师 → 整名掩码；复姓盲点回归）', () => {
+    expect(scrubText('欧阳老师来家访', noBlacklist)).toBe(`${MASK}来家访`);
+  });
+
+  it('伪复姓不吞并相邻姓氏（任张老师 → 任+掩码）', () => {
+    expect(scrubText('任张老师', noBlacklist)).toBe(`任${MASK}`);
+  });
+
   it('身份证优先于手机号（138 开头 18 位只产生一个掩码）', () => {
     expect(scrubText('证件138001380001234567', noBlacklist)).toBe(`证件${MASK}`);
   });

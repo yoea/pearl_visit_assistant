@@ -31,6 +31,73 @@ const isIllness = (s: AnonymizedStudent): boolean => hasIllness(s);
 const isSingleParentOrWeakLabor = (s: AnonymizedStudent): boolean =>
   SINGLE_PARENT_KEYWORDS.test(narrativeText(s)) || WEAK_LABOR_KEYWORDS.test(narrativeText(s));
 
+const excerpt = (t: string | null, max = 80): string => {
+  if (!t) return '';
+  const trimmed = t.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max)}……` : trimmed;
+};
+
+/** 8 因素单一定义源：学校级与学生级表格共用 label/weight/hit，evidence 按上下文生成（防双表漂移） */
+interface FactorDef {
+  label: string;
+  weight: number;
+  hit: (s: AnonymizedStudent) => boolean;
+  schoolEvidence: string;
+  studentEvidence: (s: AnonymizedStudent) => string;
+}
+
+const FACTOR_DEFS: FactorDef[] = [
+  {
+    label: '重大疾病', weight: 5, hit: isIllness,
+    schoolEvidence: '材料提及疾病/治疗情况',
+    studentEvidence: (s) => excerpt(s.familySituation) || excerpt(s.difficultyReason),
+  },
+  {
+    label: '家庭负债', weight: 4, hit: isHighDebt,
+    schoolEvidence: '材料显示存在负债',
+    studentEvidence: (s) => excerpt(s.debtNote) || (s.debtStatus ?? ''),
+  },
+  {
+    label: '单亲/弱劳动能力', weight: 4, hit: isSingleParentOrWeakLabor,
+    schoolEvidence: '材料提及家庭劳动力不足',
+    studentEvidence: (s) => excerpt(s.visitSummary) || excerpt(s.difficultyReason),
+  },
+  {
+    label: '低收入', weight: 3, hit: isLowIncome,
+    schoolEvidence: '人均年收入低于参考线',
+    // hit=isLowIncome 保证 perCapitaIncome 非空，`?? '未知'` 为死分支已移除（Task 10 复审）
+    studentEvidence: (s) => `人均年收入${s.perCapitaIncome!}元`,
+  },
+  {
+    label: '多子女上学', weight: 2, hit: (s) => (s.schoolChildrenCount ?? 0) >= 2,
+    schoolEvidence: '上学子女人数较多',
+    studentEvidence: (s) => `上学子女${s.schoolChildrenCount ?? 0}人`,
+  },
+  {
+    label: '赡养老人', weight: 2, hit: hasElderly,
+    schoolEvidence: '有需赡养老人',
+    studentEvidence: (s) => excerpt(s.elderlySupportNote) || (s.elderlySupportStatus ?? ''),
+  },
+  {
+    label: '租房陪读', weight: 1, hit: hasRental,
+    schoolEvidence: '租房居住',
+    studentEvidence: (s) => s.housingStatus ?? '',
+  },
+  {
+    label: '远距通学', weight: 1, hit: isLongDistance,
+    schoolEvidence: '距离学校较远',
+    studentEvidence: (s) => `距校${s.distanceToSchoolKm ?? 0}公里`,
+  },
+];
+
+const toFactors = (
+  s: AnonymizedStudent,
+  evidenceOf: (d: FactorDef) => string,
+): DifficultyFactor[] =>
+  FACTOR_DEFS
+    .filter((d) => d.hit(s))
+    .map((d) => ({ label: d.label, weight: d.weight, evidence: evidenceOf(d) }));
+
 /** 困难类型分布：优先用困难度字段，空则按关键词分类 */
 function difficultyDistribution(students: AnonymizedStudent[]): Record<string, number> {
   const dist: Record<string, number> = {};
@@ -60,19 +127,7 @@ function missingFieldCount(s: AnonymizedStudent): number {
 
 function buildSchoolOverview(students: AnonymizedStudent[]): SchoolOverview {
   const lowIncome = students.filter(isLowIncome).length;
-  const factors = (s: AnonymizedStudent): DifficultyFactor[] =>
-    [
-      { label: '重大疾病', weight: 5, evidence: '材料提及疾病/治疗情况', hit: isIllness(s) },
-      { label: '家庭负债', weight: 4, evidence: '材料显示存在负债', hit: isHighDebt(s) },
-      { label: '单亲/弱劳动能力', weight: 4, evidence: '材料提及家庭劳动力不足', hit: isSingleParentOrWeakLabor(s) },
-      { label: '低收入', weight: 3, evidence: '人均年收入低于参考线', hit: isLowIncome(s) },
-      { label: '多子女上学', weight: 2, evidence: '上学子女人数较多', hit: (s.schoolChildrenCount ?? 0) >= 2 },
-      { label: '赡养老人', weight: 2, evidence: '有需赡养老人', hit: hasElderly(s) },
-      { label: '租房陪读', weight: 1, evidence: '租房居住', hit: hasRental(s) },
-      { label: '远距通学', weight: 1, evidence: '距离学校较远', hit: isLongDistance(s) },
-    ]
-      .filter((f) => f.hit)
-      .map(({ label, weight, evidence }) => ({ label, weight, evidence }));
+  const factors = (s: AnonymizedStudent): DifficultyFactor[] => toFactors(s, (d) => d.schoolEvidence);
 
   const perStudentMissing = students.map((s) => ({
     anonymousId: s.anonymousId,
@@ -122,24 +177,7 @@ function buildStudentGuide(s: AnonymizedStudent): StudentInterviewGuide {
     .filter(([, v]) => v != null && v !== '')
     .map(([label, value]) => ({ label, value: value as string }));
 
-  const excerpt = (t: string | null, max = 80): string => {
-    if (!t) return '';
-    const trimmed = t.trim();
-    return trimmed.length > max ? `${trimmed.slice(0, max)}……` : trimmed;
-  };
-
-  const factors: DifficultyFactor[] = [
-    { label: '重大疾病', weight: 5, evidence: excerpt(s.familySituation) || excerpt(s.difficultyReason), hit: isIllness(s) },
-    { label: '家庭负债', weight: 4, evidence: excerpt(s.debtNote) || (s.debtStatus ?? ''), hit: isHighDebt(s) },
-    { label: '单亲/弱劳动能力', weight: 4, evidence: excerpt(s.visitSummary) || excerpt(s.difficultyReason), hit: isSingleParentOrWeakLabor(s) },
-    { label: '低收入', weight: 3, evidence: `人均年收入${s.perCapitaIncome ?? '未知'}元`, hit: isLowIncome(s) },
-    { label: '多子女上学', weight: 2, evidence: `上学子女${s.schoolChildrenCount ?? 0}人`, hit: (s.schoolChildrenCount ?? 0) >= 2 },
-    { label: '赡养老人', weight: 2, evidence: excerpt(s.elderlySupportNote) || (s.elderlySupportStatus ?? ''), hit: hasElderly(s) },
-    { label: '租房陪读', weight: 1, evidence: s.housingStatus ?? '', hit: hasRental(s) },
-    { label: '远距通学', weight: 1, evidence: `距校${s.distanceToSchoolKm ?? 0}公里`, hit: isLongDistance(s) },
-  ]
-    .filter((f) => f.hit)
-    .map(({ label, weight, evidence }) => ({ label, weight, evidence }));
+  const factors: DifficultyFactor[] = toFactors(s, (d) => d.studentEvidence(s));
 
   const verificationPoints: string[] = [];
   if (isLowIncome(s) && !s.annualIncomeNote) {
@@ -182,9 +220,10 @@ function buildStudentGuide(s: AnonymizedStudent): StudentInterviewGuide {
         s.schoolChildrenCount != null ? `上学子女${s.schoolChildrenCount}人` : null,
         s.elderlySupportStatus ? `赡养老人：${s.elderlySupportStatus}` : null,
         s.debtStatus ? `负债：${s.debtStatus}` : null,
+        s.visitSummary ? `家访记录：${excerpt(s.visitSummary, 100)}` : null,
       ]
         .filter(Boolean)
-        .join('，') + (s.visitSummary ? `。家访记录：${excerpt(s.visitSummary, 100)}` : ''),
+        .join('。') || '材料中未填写家庭情况。',
     difficultyFactors: factors,
     verificationPoints,
     suggestedQuestions: selectQuestions(s),

@@ -1,12 +1,22 @@
 import { GENERAL_GUIDE } from './general-guide';
 import type { Report } from './types';
 
+/**
+ * 动态文本行转义：行首的「#」「*」「>」「-」标记与换行可能破坏 Markdown 结构
+ * （仅影响本地 .md 显示，不改动报告数据本身）。
+ */
+export function escapeMdLine(text: string): string {
+  return text
+    .replace(/\r?\n/g, ' ') // 换行折叠为空格，避免打散段落/列表
+    .replace(/^(?=[#*>-])/, '\\'); // 行首标题/列表/引用标记前加反斜杠转义
+}
+
 /** 报告 → Markdown 文本（纯函数、确定性；不含日期随机量） */
 export function reportToMarkdown(report: Report): string {
   const lines: string[] = [];
   const o = report.overview;
 
-  lines.push(`# 走访参考报告 — ${report.schoolName}（${report.cohort}）`);
+  lines.push(`# ${report.title} — ${report.schoolName}（${report.cohort}）`);
   lines.push('');
   lines.push(`> 生成时间：${report.generatedAt}`);
   lines.push('> 说明：本报告基于脱敏后的申请材料由规则引擎生成，仅供走访参考，不构成任何资助结论。');
@@ -62,6 +72,7 @@ export function reportToMarkdown(report: Report): string {
   lines.push('### 10. 整体面谈建议');
   lines.push('');
   for (const s of o.suggestions) lines.push(`- ${s}`);
+  if (o.suggestions.length === 0) lines.push('- 暂无。');
   lines.push('');
 
   lines.push('## 二、单个学生面谈参考');
@@ -71,19 +82,20 @@ export function reportToMarkdown(report: Report): string {
     lines.push('');
     lines.push('#### 1. 基本情况');
     lines.push('');
-    for (const kv of g.basicInfo) lines.push(`- ${kv.label}：${kv.value}`);
+    for (const kv of g.basicInfo) lines.push(`- ${kv.label}：${escapeMdLine(kv.value)}`);
+    if (g.basicInfo.length === 0) lines.push('- 暂无。');
     lines.push('');
     lines.push('#### 2. 申请原因概括');
     lines.push('');
-    lines.push(g.reasonSummary);
+    lines.push(escapeMdLine(g.reasonSummary));
     lines.push('');
     lines.push('#### 3. 家庭情况概括');
     lines.push('');
-    lines.push(g.familySummary);
+    lines.push(escapeMdLine(g.familySummary));
     lines.push('');
     lines.push('#### 4. 主要困难因素');
     lines.push('');
-    for (const f of g.difficultyFactors) lines.push(`- ${f.label}（${f.evidence}）`);
+    for (const f of g.difficultyFactors) lines.push(`- ${f.label}（${escapeMdLine(f.evidence)}）`);
     if (g.difficultyFactors.length === 0) lines.push('- 材料中未识别出明显困难因素。');
     lines.push('');
     lines.push('#### 5. 需要重点核实');
@@ -94,6 +106,7 @@ export function reportToMarkdown(report: Report): string {
     lines.push('#### 6. 推荐面谈问题');
     lines.push('');
     g.suggestedQuestions.forEach((q, i) => lines.push(`${i + 1}. ${q}`));
+    if (g.suggestedQuestions.length === 0) lines.push('- 暂无。');
     lines.push('');
     lines.push('#### 7. 面谈注意事项');
     lines.push('');

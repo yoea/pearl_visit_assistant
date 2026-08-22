@@ -25,6 +25,7 @@ function collectSourceFiles(dir: string): string[] {
 const FORBIDDEN_TOKENS = [
   'localStorage', 'sessionStorage', 'indexedDB', 'document.cookie',
   'fetch(', 'axios', 'XMLHttpRequest', 'sendBeacon', 'WebSocket', 'console.',
+  'process.', // 纯前端运行：Node 专属全局对象不得出现在 src/（Task 13 复审：src/ 当前零命中，故纳入守卫）
 ];
 
 describe('隐私红线静态守卫', () => {

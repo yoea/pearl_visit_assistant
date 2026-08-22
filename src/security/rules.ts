@@ -39,8 +39,14 @@ export const RULES: Rule[] = [
 /** 地址子句掩码：同一子句（按标点切分）内出现 ≥2 个地址词 → 整句掩码 */
 export const ADDRESS_TOKENS = /省|市|县|区|镇|乡|村|组|路|街道|街|巷|号|栋|单元|室|楼|小区|苑|花园/g;
 
+/** 地址子句切分字符类（单一来源：切分与单字符判定共用，避免双源漂移） */
+const CLAUSE_CHAR_CLASS = '[。，；;！？!?，、：]';
+
 /** 地址子句切分符（带捕获组；清洗器与扫描器共用，禁止加 g 标志） */
-export const CLAUSE_SPLIT = /([。，；;！？!?，、：])/;
+export const CLAUSE_SPLIT = new RegExp(`(${CLAUSE_CHAR_CLASS})`);
+
+/** 单字符切分符判定（锚定形式：与 CLAUSE_SPLIT 同源，防止长串因含分隔符被误判为分隔段） */
+export const CLAUSE_SEP_CHAR = new RegExp(`^${CLAUSE_CHAR_CLASS}$`);
 
 /** 结构化地区字段（省/市/县/籍贯）：不做地址规则扫描（区域级信息经用户确认保留） */
 export const STRUCTURED_REGION_KEYS = new Set(['province', 'city', 'county', 'ancestralHome']);

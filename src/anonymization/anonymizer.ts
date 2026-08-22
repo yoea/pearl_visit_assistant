@@ -44,10 +44,12 @@ const EMPTY_STUDENT: AnonymizedStudent = {
 /**
  * 脱敏组装：RawStudentRecord[] → AnonymizedStudent[]。
  * drop 字段不进入输出；scrub 字段先文本清洗；generalize 字段变换后输出。
+ * @param nameBlacklist 可选：调用方已提取的姓名黑名单（复用可省去重复 O(n) 提取）；缺省时自行从 records 提取。
  */
 export function anonymize(
   records: readonly RawStudentRecord[],
   mappedColumns: MappedColumn[],
+  nameBlacklist?: ReadonlySet<string>,
 ): AnonymizationOutput {
   const byAction = (a: string) => mappedColumns.filter((c) => c.action.action === a);
   const keepCols = byAction('keep').filter((c) => c.canonicalKey);
@@ -58,7 +60,10 @@ export function anonymize(
     (c) => c.action.action === 'drop' && (c.action.reason === 'identity' || c.action.reason === 'third-party'),
   ).length;
 
-  const nameBlacklist = collectNameBlacklist(records);
+  // 姓名黑名单：调用方显式提供时复用（App 全程只提取一次，O(n)）；
+  // 不能从 nameIndex 派生：教师/审批人列可含多个姓名（collectNameBlacklist 按标点拆分），
+  // 与 nameIndex 的学生全名集不同。
+  const blacklist = nameBlacklist ?? collectNameBlacklist(records);
   const nameIndex = new Map<string, string>();
 
   const students = records.map((rec, i) => {
@@ -75,7 +80,9 @@ export function anonymize(
     }
 
     const setField = (key: string, value: CellValue) => {
-      if (!(key in EMPTY_STUDENT)) return; // 运行时守卫：canonicalKey 闭集漂移时未知键绝不物化进输出
+      // 运行时守卫：只接受 EMPTY_STUDENT 的自有属性（排除原型链属性如 constructor/toString），
+      // canonicalKey 闭集漂移时未知键绝不物化进输出
+      if (!Object.prototype.hasOwnProperty.call(EMPTY_STUDENT, key)) return;
       (student as unknown as Record<string, unknown>)[key] = value;
     };
 
@@ -89,7 +96,7 @@ export function anonymize(
     }
     for (const col of scrubCols) {
       const rawText = toText(rec.values[col.header]);
-      setField(col.canonicalKey!, rawText ? scrubText(rawText, nameBlacklist) : null);
+      setField(col.canonicalKey!, rawText ? scrubText(rawText, blacklist) : null);
     }
     for (const col of generalizeCols) {
       if (col.canonicalKey === 'admissionRank') {

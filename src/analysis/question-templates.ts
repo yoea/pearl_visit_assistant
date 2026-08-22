@@ -9,22 +9,34 @@ export interface QuestionTemplate {
   priority: number;
 }
 
+/** 否定表述前缀：以「无/0/没有」开头的字段视为否定回答（三类谓词统一口径） */
+const NEGATIVE_PREFIX = /^(无|0|没有)/;
+
+/** 疾病词：正向语境（患病/生病/疾病/具体病种/治疗史），不含裸「病」字——避免「看病难」等中性表述误判 */
+const ILLNESS_KEYWORDS =
+  /癌|肿瘤|残疾|手术|住院|慢性|重症|心脏病|糖尿病|精神|瘫痪|尿毒症|白血病|中风|肝硬化|透析|患病|生病|得病|疾病|重病|大病|久病|病重/;
+
 export function hasRental(s: AnonymizedStudent): boolean {
   return /租房|租住|出租/.test(s.housingStatus ?? '');
 }
 export function hasElderly(s: AnonymizedStudent): boolean {
-  return s.elderlySupportStatus != null && s.elderlySupportStatus.trim() !== '';
+  const v = (s.elderlySupportStatus ?? '').trim();
+  if (v === '') return false;
+  return !NEGATIVE_PREFIX.test(v);
 }
 export function hasDebt(s: AnonymizedStudent): boolean {
   const d = (s.debtStatus ?? '').trim();
   if (d === '') return false;
-  return !/^(无|0|无负债|没有)$/.test(d);
+  // 前缀否定覆盖「无负债/无债务/无欠款/0/没有」等表述
+  return !NEGATIVE_PREFIX.test(d);
 }
 export function hasIllness(s: AnonymizedStudent): boolean {
-  return /癌|肿瘤|残疾|手术|住院|慢性|重症|心脏病|糖尿病|精神|瘫痪|尿毒症|白血病|中风|肝硬化|透析|病/.test(
-    [s.healthStatus, s.familySituation, s.visitSummary, s.difficultyReason, s.elderlySupportNote, s.annualIncomeNote]
-      .filter(Boolean).join('，'),
-  );
+  // 否定前缀字段整体排除（如「无重大疾病」「没有病史」）；其余字段按正向疾病词匹配。
+  // 已知局限：词内否定（如「家庭无疾病史」）不覆盖——规则引擎仅做前缀级近似，不追求全语义。
+  const text = [s.healthStatus, s.familySituation, s.visitSummary, s.difficultyReason, s.elderlySupportNote, s.annualIncomeNote]
+    .filter((f): f is string => f !== null && f !== '' && !NEGATIVE_PREFIX.test(f.trim()))
+    .join('，');
+  return ILLNESS_KEYWORDS.test(text);
 }
 
 /** 中性问题模板库：不诱导、不给结论、尊重学生 */

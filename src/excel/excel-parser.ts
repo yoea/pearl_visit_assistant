@@ -25,11 +25,17 @@ const ParsedExcelSchema = z.object({
   headerRowIndex: z.number(),
 });
 
-/** 读取 xlsx 并解析：自动探测表头行，按列字母对齐（SheetJS 原生行为），容忍空单元格 */
+/**
+ * 读取 xlsx 并解析：自动探测表头行，按列字母对齐（SheetJS 原生行为），容忍空单元格。
+ * 只解析第一个工作表（基金会的学生数据模板为单表；多表文件的其余 sheet 被忽略，
+ * 如需支持多表需在此显式扩展）。错误统一抛 Error（表头未找到/表头重复），
+ * 由 UI 层（App.handleFile）捕获并包装为用户可读文案，本层不翻译。
+ */
 export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
   const wb = XLSX.read(buffer, { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  // raw:false：值统一按显示文本输出，便于统一清洗
+  // raw:false：值统一按显示文本输出，便于统一清洗。注意：输出值可能与原始存储值存在
+  // 格式差异（如日期/数字按单元格显示格式渲染），这是有意的取舍——优先保证可清洗性。
   const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false }) as unknown[][];
 
   const headerIdx = detectHeaderRow(matrix);

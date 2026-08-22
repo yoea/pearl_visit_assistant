@@ -31,6 +31,7 @@ describe('RawStore', () => {
     const store = new RawStore();
     store.setRecords([rec({ 性别: '女' })]);
     const snap = store.snapshot();
+    // 刻意断言到非只读类型再 pop：快照是数组级副本，删除其元素不影响仓库（安全语义）
     (snap as RawStudentRecord[]).pop();
     expect(store.count).toBe(1);
   });
@@ -63,7 +64,9 @@ describe('collectNameBlacklist', () => {
     expect(names).toEqual(new Set(['测试乙', '王明']));
   });
 
-  it('姓名别名与策略表一致（不变量）', () => {
+  it('姓名别名均为身份/第三方别名表的子集（单向不变量）', () => {
+    // 仅单向：NAME_BEARING_ALIASES ⊆ 身份别名 ∪ 第三方别名；并集还含身份证号/电话等
+    // 非姓名别名，因此不做反向包含断言。
     const union = [...FORBIDDEN_IDENTITY_ALIASES, ...THIRD_PARTY_ALIASES];
     for (const alias of NAME_BEARING_ALIASES) {
       expect(union).toContain(alias);

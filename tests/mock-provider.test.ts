@@ -104,4 +104,27 @@ describe('MockAnalysisProvider', () => {
     ]));
     expect(result.students[0].difficultyFactors).toHaveLength(0);
   });
+
+  it('basicInfo 过滤空字符串与 null 字段（授权偏离回归测试）', async () => {
+    const provider = new MockAnalysisProvider();
+    const result = await provider.analyze(requestWith([
+      student({ anonymousId: 'student-002', gender: null, ethnicity: '', healthStatus: '健康' }),
+    ]));
+    const labels = result.students[0].basicInfo.map((kv) => kv.label);
+    expect(labels).not.toContain('性别');
+    expect(labels).not.toContain('民族');
+    expect(labels).toContain('健康情况');
+  });
+
+  it('家庭情况字段全缺省时给出占位文案（与申请理由对称）', async () => {
+    const provider = new MockAnalysisProvider();
+    const result = await provider.analyze(requestWith([
+      student({
+        anonymousId: 'student-002', householdType: null, annualIncome: null,
+        perCapitaIncome: null, housingStatus: null, schoolChildrenCount: null,
+        elderlySupportStatus: null, debtStatus: null, visitSummary: null,
+      }),
+    ]));
+    expect(result.students[0].familySummary).toBe('材料中未填写家庭情况。');
+  });
 });

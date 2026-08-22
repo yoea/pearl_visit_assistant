@@ -1,4 +1,4 @@
-import type { FieldAction } from '../types/student';
+import type { AnonymizedStudent, FieldAction } from '../types/student';
 
 /** 策略中文标签（UI 展示用） */
 export const ACTION_LABELS: Record<FieldAction['action'], string> = {
@@ -8,15 +8,18 @@ export const ACTION_LABELS: Record<FieldAction['action'], string> = {
   drop: '不发送',
 };
 
-export const DROP_REASON_LABELS: Record<string, string> = {
+type DropReason = Extract<FieldAction, { action: 'drop' }>['reason'];
+
+/** 删除原因中文标签：键集与 drop reason 联合类型编译期锁定 */
+export const DROP_REASON_LABELS: Record<DropReason, string> = {
   identity: '身份信息',
   'third-party': '第三方姓名',
   internal: '内部字段',
   unknown: '未知字段',
 };
 
-/** 匿名学生字段中文标签（预览与报告用） */
-export const STUDENT_FIELD_LABELS: Record<string, string> = {
+/** 匿名学生字段中文标签（预览与报告用）：键集与 AnonymizedStudent 编译期锁定（35 键不变量） */
+export const STUDENT_FIELD_LABELS: Record<keyof AnonymizedStudent, string> = {
   anonymousId: '匿名编号',
   gender: '性别', ethnicity: '民族', householdType: '户口', height: '身高',
   weight: '体重', healthStatus: '健康情况', difficultyLevel: '困难度',
