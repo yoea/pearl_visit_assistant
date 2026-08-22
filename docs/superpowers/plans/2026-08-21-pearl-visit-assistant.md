@@ -2388,6 +2388,7 @@ git commit -m "feat: Mock 分析器（确定性规则引擎）与中性问题模
 
 **执行记录（控制器预检裁决）：**
 - 学生级困难因素改为 hit 门控：原草案仅有 evidence 门控（`evidence: excerpt(...) || (s.debtStatus ?? '')`），「无负债」学生会生成一条"家庭负债"因素。裁决：给全部 8 个因素加 `hit` 谓词（isIllness/isHighDebt/isSingleParentOrWeakLabor/isLowIncome/schoolChildrenCount≥2/hasElderly/hasRental/isLongDistance），`.filter((f) => f.hit)` 后再剥离 hit 字段；basicInfo 过滤排除空串。同步新增回归测试「学生级：未命中的因素不出现」，Step 5 用例数 7→8。
+- 执行结果：提交 005e4f2（3 文件），单文件 8/8 + 全量 86/86 + tsc 仅 1 个已知 TS2307。规范复审 ✅（实现者自报偏离——basicInfo 字面量加 `as [string, string | null][]` 元组断言修复 TS2322——复审确认仅为编译层最小修正、行为不变，可接受）。质量复审 **Ready to merge: Yes**，无 Critical/Important；8 则 Minor 转 Task 15 待办 11-17（谓词否定式边界、5-8 下界契约、空串过滤回归测试、familySummary 兜底、因素表去重、死分支、分布粒度提示）。
 
 ---
 
@@ -3854,6 +3855,13 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 8. Task 7 复审非阻断观察（可选加固）：setField 守卫用 `in` 运算符含原型链，理论上一行改 `Object.prototype.hasOwnProperty.call(EMPTY_STUDENT, key)` 彻底闭合（实际仅手工伪造 MappedColumn 才可达）。
 > 9. Task 8 复审 Minor 三则：① 两次扫描一致性用例当前用无命中 payload（cleanRequest），exec 对不匹配串自动重置 lastIndex，删掉显式重置也不会失败——换命中 payload（如 id-card 版）才能真正钉住 lastIndex 不变量；② scanner.ts 中 `JSON.stringify` 对 BigInt/循环引用仍会抛（payload 类型固定 AnalysisRequest 不可达）——try/catch 返回 malformed-payload 或在注释注明；③ `students:[null]` 用例补 `expect(r.passed).toBe(true)` 钉住放行语义。
 > 10. Task 9 质量审查转前向验收标准（未来 DeepSeek 任务）：①「UI 无法绕过」目前仅靠约定——DeepSeek 接入时网络类 provider 不得作为公共导出，仅经 `createAnalysisService()` 工厂在 analysis 模块内部构造，只导出 AnalysisService；②「严禁通过/淘汰结论」契约目前仅注释——DeepSeek 落地时必须在服务层或 provider 输出侧加可执行守卫（结论关键词扫描或 schema 校验）；③ Minor：`SecurityViolationError.findings` 改 `ReadonlyArray<SecurityFinding>`；④ 测试缺口：补「provider 抛错原样透传」与「空黑名单通过路径」两用例。
+> 11. Task 10 质量审查 Minor（谓词边界，最值得先修）：`hasIllness` 裸「病」字符过宽（命中「无重大疾病」「看病难」等否定/中性表述→误挂疾病因素、majorIllnessCount 虚高）；`hasDebt` 否定清单不覆盖「无债务」「无欠款」；`hasElderly` 任意非空串（含「无」「0」）即命中。统一收紧：否定词前缀先行排除（/^(无|0|没有)/ 前缀判断）+「病」加上下文约束，各补负例测试；顺手给 question-templates.ts 的 4 个导出谓词补独立单测（现仅经 provider 间接覆盖）。
+> 12. Task 10 质量审查 Minor：`selectQuestions`「5-8 个」下界未由代码保证（slice(0,8) 依赖模板库规模，未来增删模板即静默破坏）——函数内补 `Math.max(5, …)` 或断言「无条件模板数 ≥ 5」不变量 + 测试。
+> 13. Task 10 质量审查 Minor：授权偏离「basicInfo 过滤空串」无回归测试钉死——补 1 个用例（空串/null 字段被过滤）。
+> 14. Task 10 质量审查 Minor：`familySummary` 全字段 null 且无家访总结时返回 ''——补「材料中未填写家庭情况。」兜底（与 reasonSummary 对称）。
+> 15. Task 10 质量审查 Minor（可选重构）：学校级/学生级两处 8 因素表重复定义有漂移风险——提取共享 FACTOR_DEFS（evidence 按上下文函数生成），勿过度抽象。
+> 16. Task 10 质量审查 Minor：mock-provider.ts 低收入因素 evidence 中 `perCapitaIncome ?? '未知'` 为死分支（hit 门控已保证非 null）——删除或 TS 收窄写法。
+> 17. Task 10 质量审查 Minor（v1 可接受，仅提示）：`difficultyDistribution` 混合两种粒度（difficultyLevel 级别串 vs 关键词标签串）——Task 15 真实数据走查时留意报告展示效果。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
