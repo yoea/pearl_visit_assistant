@@ -142,6 +142,7 @@ export default function App() {
             onAnalyze={() => void handleAnalyze()}
             analyzing={analyzing}
             error={analyzeError}
+            onReset={handleReset}
           />
         )}
         {state.stage === 'analyzed' && (

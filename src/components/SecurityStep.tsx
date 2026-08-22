@@ -18,7 +18,7 @@ const CHECK_LABELS = [
 ] as const;
 
 export default function SecurityStep({
-  output, scan, onScan, onAnalyze, analyzing, error,
+  output, scan, onScan, onAnalyze, analyzing, error, onReset,
 }: {
   output: AnonymizationOutput;
   scan: SecurityScanResult | null;
@@ -26,6 +26,7 @@ export default function SecurityStep({
   onAnalyze: () => void;
   analyzing: boolean;
   error?: string;
+  onReset: () => void;
 }) {
   const hitKeys = new Set(scan?.findings.map((f) => f.category) ?? []);
 
@@ -76,6 +77,9 @@ export default function SecurityStep({
                 />
               ))}
             </ul>
+            <div className="mt-4">
+              <Button variant="secondary" onClick={onReset}>重新开始</Button>
+            </div>
           </div>
         )}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
