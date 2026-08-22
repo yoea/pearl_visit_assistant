@@ -2979,6 +2979,9 @@ git add src/state/pipeline.ts tests/pipeline.test.ts tests/no-persistence.test.t
 git commit -m "feat: 流水线状态机与隐私红线静态守卫测试"
 ```
 
+**执行记录：**
+- 提交 8cc1990（6 文件：3 新 + package.json/package-lock.json/tsconfig.json）+ 修复轮 98caa5c（仅 2 测试文件）。4/4 + 全量 95/95 + tsc 0 错误。规范复审 ✅（自报额外偏离——pipeline.ts 删除未使用 AnonymizationOutput 导入——确认为 noUnusedLocals 下 TS6133 的必要最小修正，行为不变）。质量复审初轮 Ready to merge: Yes，2 Important + 5 Minor；裁决修复轮（console. 家族/WebSocket/扫描根锚定/断言加固/绊线注释）后聚焦复审 **Ready to merge: Yes**。Minor 3/4 转 Task 15 待办 24。
+
 ---
 
 ## Task 14: UI 组件与 App 组装
@@ -3877,6 +3880,7 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 21. Task 11 质量审查 Minor：`Report.title` 未被 reportToMarkdown 读取（标题字面量重复，改 title 会静默分叉）——`#` 行改插值 `report.title`。
 > 22. Task 11 质量审查 Minor：suggestedQuestions/basicInfo/suggestions 空态缺失（未来 DeepSeek provider 可能返回空数组，留悬空标题）——各补「- 暂无。」；顺带补空学生列表（0 学生 → 0.0% 不崩）与空分布兜底文案测试。（DeepSeek 结论守卫属待办 10②，已覆盖。）
 > 23. Task 12 质量审查 Minor 三则：① UsageEvent 联合无穷尽性守卫（if/else if 链，新增事件不强制处理——可选 switch + default: never；注意未知事件静默忽略是有意 fail-safe，勿改成抛错）；② 补两个测试：`record('imported')` 无 meta（钉死 `?? 0` 默认）与快照副本独立性（改 snap 后再 getSnapshot 不受污染）；③ `JSON.stringify(snap).not.toContain('学生')` 断言属装饰性（Object.keys 已结构性保证），保留即可无需改。
+> 24. Task 13 质量审查 Minor 两则：① tsconfig types 加 "node" 的副作用记录——Node 全局（process/Buffer 等）在 src/ 通过类型检查，削弱纯前端编译期纪律（真正 `node:` 模块 import 会被 Vite 打包拦下，风险低）；可选加固：守卫 token 加 `'process.'`（先 grep 确认 src 零误伤）；② 计划级设计注记：SCAN/ANALYSIS 事件冗余携带 output/scan，reducer 无条件信任事件载荷——可选重构为事件只带增量、reducer 复用 state 字段（不影响安全，硬闸在 AnalysisService）。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
