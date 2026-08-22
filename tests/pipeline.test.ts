@@ -32,12 +32,16 @@ describe('pipelineReducer', () => {
 
   it('非法跳转被忽略（不能跳过阶段）', () => {
     const idle: PipelineState = { stage: 'idle' };
-    expect(pipelineReducer(idle, { type: 'ANONYMIZE_SUCCEEDED', output }).stage).toBe('idle');
-    expect(pipelineReducer(idle, { type: 'ANALYSIS_SUCCEEDED', output, scan, result, report }).stage).toBe('idle');
+    expect(pipelineReducer(idle, { type: 'ANONYMIZE_SUCCEEDED', output })).toBe(idle);
+    expect(pipelineReducer(idle, { type: 'ANALYSIS_SUCCEEDED', output, scan, result, report })).toBe(idle);
+
+    const parsedState: PipelineState = { stage: 'parsed', ...parsed };
+    expect(pipelineReducer(parsedState, { type: 'PARSE_SUCCEEDED', parsed })).toBe(parsedState);
+    expect(pipelineReducer(parsedState, { type: 'SCAN_SUCCEEDED', output, scan })).toBe(parsedState);
   });
 
   it('RESET 任意阶段回到 idle', () => {
     const analyzed: PipelineState = { stage: 'analyzed', output, scan, result, report };
-    expect(pipelineReducer(analyzed, { type: 'RESET' }).stage).toBe('idle');
+    expect(pipelineReducer(analyzed, { type: 'RESET' })).toEqual({ stage: 'idle' });
   });
 });
