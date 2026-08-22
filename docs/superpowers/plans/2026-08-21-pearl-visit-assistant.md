@@ -3852,6 +3852,11 @@ git add src/components/ src/App.tsx
 git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名预览/安全检查/报告）"
 ```
 
+**执行记录：**
+- 提交 50acd16（13 文件：12 组件 + App.tsx 重写）+ 修复轮 9863238（2 文件 +6/-1）。95/95 + build 0 错误 + no-persistence 守卫绿。规范复审 ✅（自报额外偏离——SecurityStep CHECK_LABELS 加 `as const`——确认为 TS2345 下必要最小修正，行为不变）。
+- 质量复审初轮 **With fixes**：1 Important——SecurityStep 扫描失败态是 UI 死胡同（红色提示「请重新导入」却无按钮；handleReset 仅 ReportStep 接出，scanned 阶段不可达，只能刷新页面丢会话）。裁决修复：SecurityStep 加必填 `onReset` prop + 失败态「重新开始」按钮，App.tsx 补传 handleReset（复用既有清空逻辑）。
+- 聚焦复审 **Ready to merge: Yes**：死胡同彻底闭合（RESET 无 stage 前置条件，scanned → idle → ImportStep 可重新导入）；重置按钮仅存在于失败分支，与 handleAnalyze 的 `!state.scan.passed` 入口守卫互斥，无分析中误重置路径；无过度修复；build + 95/95 + 守卫实测通过。Minor 2-8 转 Task 15 待办 25。
+
 ---
 
 ## Task 15: 合成示例数据脚本、README 与最终验证
@@ -3881,6 +3886,7 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 22. Task 11 质量审查 Minor：suggestedQuestions/basicInfo/suggestions 空态缺失（未来 DeepSeek provider 可能返回空数组，留悬空标题）——各补「- 暂无。」；顺带补空学生列表（0 学生 → 0.0% 不崩）与空分布兜底文案测试。（DeepSeek 结论守卫属待办 10②，已覆盖。）
 > 23. Task 12 质量审查 Minor 三则：① UsageEvent 联合无穷尽性守卫（if/else if 链，新增事件不强制处理——可选 switch + default: never；注意未知事件静默忽略是有意 fail-safe，勿改成抛错）；② 补两个测试：`record('imported')` 无 meta（钉死 `?? 0` 默认）与快照副本独立性（改 snap 后再 getSnapshot 不受污染）；③ `JSON.stringify(snap).not.toContain('学生')` 断言属装饰性（Object.keys 已结构性保证），保留即可无需改。
 > 24. Task 13 质量审查 Minor 两则：① tsconfig types 加 "node" 的副作用记录——Node 全局（process/Buffer 等）在 src/ 通过类型检查，削弱纯前端编译期纪律（真正 `node:` 模块 import 会被 Vite 打包拦下，风险低）；可选加固：守卫 token 加 `'process.'`（先 grep 确认 src 零误伤）；② 计划级设计注记：SCAN/ANALYSIS 事件冗余携带 output/scan，reducer 无条件信任事件载荷——可选重构为事件只带增量、reducer 复用 state 字段（不影响安全，硬闸在 AnalysisService）。
+> 25. Task 14 质量审查 Minor 七则 + 控制器预检一则：① SecurityStep `!scan` 死分支——scanned 阶段 scan 必非 null（SCAN_SUCCEEDED 是唯一入口），「运行安全检查」按钮永不可渲染、onScan 为死代码，可删或改用途；② 黑名单重复计算——App.tsx 调 `rawStore.collectNameBlacklist()` 与 anonymize 内部独立计算同一 Set（anonymizer.ts:61），O(n) 重复工作，考虑 anonymize 返回黑名单或接受参数；③ 冗余 cast——App.tsx `values as Record<string, CellValue>`（parsed.rows 已为该类型，装饰性）；④ `STAGE_TO_STEP` 收紧为 `Record<Stage, number>` + 装饰性：step 4（匿名预览）在 Stepper 永不点亮（anonymized→3，PreviewStep 显示时第 3 步激活），且 anonymizedView === 'preview' 无返回 stats 视图路径；⑤ handleAnalyze 无 in-flight ref 守卫（当前 disabled={analyzing} + reducer 阶段守卫已防住，DeepSeek 网络 provider 替换前必加）；⑥ 非虚拟化列表注记——PreviewStep/ReportStep 全量渲染，单校规模（数百）可，数千行需虚拟化；bundle 632 KB 为既有 xlsx 体积；⑦ 进程注记——「计划同步 Task 14」散文提交（本待办落地时即完成）；⑧ 控制器预检：SecurityStep CHECK_LABELS 缺 'landline' 与 'malformed-payload' 展示行——扫描命中这两类时 banner 已阻止发送但列表全绿（安全不受影响，仅展示问题）。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
