@@ -4000,10 +4000,10 @@ Expected: `examples/` 下文件不出现（已忽略）。
 
 1. `npm run dev` → 打开 http://localhost:5173；
 2. 导入 `examples/示例数据（虚构）.xlsx`：显示学校名称、4 名学生、60 字段；
-3. 字段映射页：身份字段标红「不发送（身份信息）」，排名标「泛化」；
+3. 字段映射页：身份字段显示灰色「不发送（身份信息）」（最终审查修正：MappingStep 的 TONE 映射 drop→slate 灰色 Badge，非红色），排名标「泛化」；
 4. 脱敏统计：敏感字段数 11（8 身份 + 3 第三方）、已删除 26、已泛化 1、发送 34；
-5. 匿名预览：student-001…；展开测试学生丁：家庭情况中的手机号与地址已显示为 `[已隐藏]`；
-6. 安全检查：全部 ✓ → 「开始 AI 分析」→ 报告生成（含学生丁的疾病/负债核实点与中性问题）；
+5. 匿名预览：student-001…；展开测试学生丁：家访总结（及年收入说明）中的手机号与地址已显示为 `[已隐藏]`（最终审查修正：清洗验证文本位于家访总结/年收入说明两字段，非家庭情况——家庭情况值为「正常」）；
+6. 安全检查：全部 ✓ → 「开始 AI 分析」→ 报告生成（最终审查修正：学生丁负债情况为「无负债」故无负债核实点；实际含其疾病注意项（父亲残疾）、劳动力不足核实点与中性问题）；
 7. 报告页：本地查找输入「测试」能定位；「下载走访参考报告」生成 .md 文件；
 8. 刷新页面：一切数据消失（内存数据，无残留）。
 
@@ -4020,6 +4020,8 @@ git commit -m "docs: README 与合成示例数据生成脚本"
 - 规范复审 ✅（5 自报偏离全部接受：familySummary parts 统一 join('。')（分隔符 '，'→'。' 纯装饰，自报「逐字一致」不精确已记录）；App 删死代码 `?? 1`；escapeMdLine 额外转义行首 '-'；hasIllness 否定前缀逐字段判定（比整段拼接更严格，无假阴性回退）；markdown 注释避开字面 `*/`）。rules.ts/scanner.ts/anonymizer.ts 改动经核验不放宽任何安全语义（CLAUSE 正则单一来源行为逐字等价、try/catch 新增 fail-closed 路径、hasOwnProperty 守卫只严不松、可选黑名单缺省与原行为等价）；field-policies.ts 未动。
 - 质量复审 **Ready to merge: Yes**（0 Critical / 0 Important）。Minor 五则（无后续任务可转，记录于此）：① markdown.ts difficultyDistribution 键与 suggestions/verificationPoints/cautions 动态点未转义（今日 mock 静态；DeepSeek 接入后须套 escapeMdLine）；② hasDebt/hasElderly 前缀否定反向误伤（「无抵押贷款」等）与「暂无」局限，注释补充；③ scanPayload/AnalysisService.analyze 的 Set 参数可统一为 ReadonlySet；④ SecurityStep finding.label 未展示；⑤ familySummary join('。') 后无尾句号。
 - 待办 10①② 前向验收标准（DeepSeek 接入时：网络 provider 仅经工厂内部构造、结论守卫可执行化）保留有效，代码注释已标注。
+- 最终全量代码审查（e7f5fd4..79a8fd5，44 提交 60 文件 7108 行）**APPROVED WITH RESERVATIONS**：L1 安全链 10 跳逐跳验证全部安全（唯一发送路径 AnalysisService.analyze 硬闸闭环、nameIndex 无途径进入 payload/report、错误消息零泄露、静态守卫绊线性质与运行时兜底定位正确）；L2 集成接缝零漂移；DoD 硬性项全部达标（119/119、build、tsc、git 无数据文件）；0 Critical / 0 Important。保留意见为文档级：Step 5 走查清单 3 处描述与代码不符（标红→灰色 Badge、验证文本在家庭情况→家访总结/年收入说明、学生丁负债核实点→实际无负债故为疾病/劳动力/低收入核实点）——已在本清单直接修正。
+- 最终审查新增 Minor 与残余风险（记录，不阻塞）：① Stepper 第 4 步「匿名预览」永不激活（STAGE_TO_STEP 无阶段映射 4；待办 25④ 已记录，属已知装饰问题）；② mock-provider SENT_FIELD_COUNT=34 硬编码未与 AnonymizedStudent 字段数编译期锁定（当前一致）；③ 未来网络 provider 错误可能携带响应体上屏——DeepSeek 接入时应清洗错误文案；④ 结构化地区豁免（省/市/县/籍贯跳过地址子句扫描）为已裁决接受风险；⑤ 自由文本中无前缀裸 QQ 号/微信号不命中模式规则——靠列级删除与姓名黑名单缓解，模式匹配固有边界。
 - Step 5 手工走查清单留给用户执行。
 
 ---
