@@ -2833,6 +2833,10 @@ git add src/stats/usage-stats.ts tests/usage-stats.test.ts
 git commit -m "feat: 使用统计接口与内存实现（仅白名单计数）"
 ```
 
+**执行记录：**
+- 提交 f78fe96（2 文件），2/2 + 全量 91/91 + tsc 0 错误。规范复审 ✅；质量复审 **Ready to merge: Yes**。
+- 复审发现计划级不一致并裁决：原 Task 14 计划代码 `record('analysisCompleted', { studentCount })` 传入了本实现丢弃的 meta（类型检查不会报错，静默丢数据）。裁决采用方案 (b)：**totalStudents 语义固定为「导入学生人数总和」**（同一批学生已在 imported 计过，analysisCompleted 再计会虚高一倍）；Task 14 调用点已改为 `record('analysisCompleted')` 并加注释。Minor 三则转 Task 15 待办 23。
+
 ---
 
 ## Task 13: 流水线状态机与静态安全守卫测试
@@ -3760,7 +3764,9 @@ export default function App() {
       const request = { meta: metaRef.current, students: state.output.students };
       const result = await analysisService.analyze(request, nameBlacklistRef.current);
       const report = generateReport(result, metaRef.current, new Date());
-      usageStats.record('analysisCompleted', { studentCount: state.output.students.length });
+      // 注意：analysisCompleted 不带人数——totalStudents 语义为「导入学生人数总和」，
+      // 同一批学生已在 imported 计过，若此处再计会虚高一倍（Task 12 复审裁决）。
+      usageStats.record('analysisCompleted');
       dispatch({
         type: 'ANALYSIS_SUCCEEDED',
         output: state.output,
@@ -3870,6 +3876,7 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 20. Task 11 质量审查 Minor：download.ts `URL.revokeObjectURL` 紧跟 click 同步调用——改 `setTimeout(..., 0)` 防御旧引擎。
 > 21. Task 11 质量审查 Minor：`Report.title` 未被 reportToMarkdown 读取（标题字面量重复，改 title 会静默分叉）——`#` 行改插值 `report.title`。
 > 22. Task 11 质量审查 Minor：suggestedQuestions/basicInfo/suggestions 空态缺失（未来 DeepSeek provider 可能返回空数组，留悬空标题）——各补「- 暂无。」；顺带补空学生列表（0 学生 → 0.0% 不崩）与空分布兜底文案测试。（DeepSeek 结论守卫属待办 10②，已覆盖。）
+> 23. Task 12 质量审查 Minor 三则：① UsageEvent 联合无穷尽性守卫（if/else if 链，新增事件不强制处理——可选 switch + default: never；注意未知事件静默忽略是有意 fail-safe，勿改成抛错）；② 补两个测试：`record('imported')` 无 meta（钉死 `?? 0` 默认）与快照副本独立性（改 snap 后再 getSnapshot 不受污染）；③ `JSON.stringify(snap).not.toContain('学生')` 断言属装饰性（Object.keys 已结构性保证），保留即可无需改。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
