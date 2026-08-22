@@ -3853,6 +3853,7 @@ git commit -m "feat: 六步 UI 流程与 App 组装（本地姓名定位/匿名�
 > 7. Task 7 质量审查 Minor：nameIndex 防泄漏当前依赖 `JSON.stringify(Map)==='{}'` 的 JS 语义（structuredClone 会完整克隆 Map）——最终验证加一条 `JSON.stringify(output)` 不含姓名的断言钉死不变量。
 > 8. Task 7 复审非阻断观察（可选加固）：setField 守卫用 `in` 运算符含原型链，理论上一行改 `Object.prototype.hasOwnProperty.call(EMPTY_STUDENT, key)` 彻底闭合（实际仅手工伪造 MappedColumn 才可达）。
 > 9. Task 8 复审 Minor 三则：① 两次扫描一致性用例当前用无命中 payload（cleanRequest），exec 对不匹配串自动重置 lastIndex，删掉显式重置也不会失败——换命中 payload（如 id-card 版）才能真正钉住 lastIndex 不变量；② scanner.ts 中 `JSON.stringify` 对 BigInt/循环引用仍会抛（payload 类型固定 AnalysisRequest 不可达）——try/catch 返回 malformed-payload 或在注释注明；③ `students:[null]` 用例补 `expect(r.passed).toBe(true)` 钉住放行语义。
+> 10. Task 9 质量审查转前向验收标准（未来 DeepSeek 任务）：①「UI 无法绕过」目前仅靠约定——DeepSeek 接入时网络类 provider 不得作为公共导出，仅经 `createAnalysisService()` 工厂在 analysis 模块内部构造，只导出 AnalysisService；②「严禁通过/淘汰结论」契约目前仅注释——DeepSeek 落地时必须在服务层或 provider 输出侧加可执行守卫（结论关键词扫描或 schema 校验）；③ Minor：`SecurityViolationError.findings` 改 `ReadonlyArray<SecurityFinding>`；④ 测试缺口：补「provider 抛错原样透传」与「空黑名单通过路径」两用例。
 
 **Files:**
 - Create: `scripts/generate-sample-xlsx.mjs`, `README.md`
