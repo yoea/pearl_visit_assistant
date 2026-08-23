@@ -107,7 +107,8 @@ function walk(
 
 export interface ScanOptions {
   /** 豁免地址子句检测的字段路径（如出站 wire 结构的 'school.name'）。
-   *  只豁免地址子句，其余规则（证件/电话/姓名模式/字段名）照常扫描。 */
+   *  只豁免地址子句，其余规则（证件/电话/姓名模式/字段名）照常扫描。
+   *  路径写法与 SecurityFinding.field 一致（相对根对象、点分隔、数组下标 [i]），精确匹配。 */
   exemptAddressPaths?: readonly string[];
 }
 

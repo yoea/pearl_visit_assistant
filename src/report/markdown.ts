@@ -42,7 +42,7 @@ export function reportToMarkdown(report: Report): string {
   lines.push('');
   lines.push('### 1. 困难类型分布');
   lines.push('');
-  for (const p of sa.difficultyPatterns) lines.push(`- ${p}`);
+  for (const p of sa.difficultyPatterns) lines.push(`- ${escapeMdLine(p)}`);
   if (sa.difficultyPatterns.length === 0) lines.push('- 材料中未填写困难度，且未识别出明显困难类型。');
   lines.push('');
   lines.push('### 2. 共性问题');

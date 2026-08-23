@@ -116,4 +116,17 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(md).toContain('#### 1. 基本情况\n\n- 暂无。');
     expect(md).toContain('#### 6. 推荐面谈问题\n\n- 暂无。');
   });
+
+  it('困难类型分布行也做 Markdown 转义（difficultyLevel 换行不破坏结构）', async () => {
+    const adversarial: AnonymizedStudent = {
+      ...sampleStudent,
+      difficultyLevel: '特别困难\n# 假标题',
+    };
+    const result = await new MockAnalysisProvider().analyze({
+      meta, students: [adversarial],
+    } satisfies AnalysisRequest);
+    const md = reportToMarkdown(generateReport(result, meta, now, [adversarial]));
+    expect(md).toContain('特别困难 # 假标题：1人');
+    expect(md).not.toMatch(/^# 假标题/m);
+  });
 });
