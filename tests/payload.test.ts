@@ -129,6 +129,24 @@ describe('wireResponseSchema', () => {
     }).success).toBe(false);
   });
 
+  it('interviewQuestions 超过 8 → 拒绝', () => {
+    expect(wireResponseSchema.safeParse({
+      version: '1.0', schoolAnalysis,
+      students: [{ ...okStudent, interviewQuestions: ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'] }],
+    }).success).toBe(false);
+  });
+
+  it('factor/evidence 空串 → 拒绝', () => {
+    expect(wireResponseSchema.safeParse({
+      version: '1.0', schoolAnalysis,
+      students: [{ ...okStudent, mainDifficultyFactors: [{ factor: '', evidence: 'e', importance: 'high' }] }],
+    }).success).toBe(false);
+    expect(wireResponseSchema.safeParse({
+      version: '1.0', schoolAnalysis,
+      students: [{ ...okStudent, mainDifficultyFactors: [{ factor: 'x', evidence: '', importance: 'high' }] }],
+    }).success).toBe(false);
+  });
+
   it('未知多余键忽略（非严格模式）', () => {
     const r = wireResponseSchema.safeParse({
       version: '1.0', schoolAnalysis, students: [okStudent], extraKey: 'whatever',
@@ -157,5 +175,9 @@ describe('parseResponseText（JSON 修复一次）', () => {
   it('无法修复 → null（不抛异常、不静默吞错）', () => {
     expect(parseResponseText('这不是 JSON')).toBeNull();
     expect(parseResponseText('')).toBeNull();
+  });
+
+  it('escaped 引号不提前终止字符串（修复后解析成功）', () => {
+    expect(parseResponseText('{"a":"\\"}"}')).toEqual({ a: '"}' });
   });
 });

@@ -4,11 +4,12 @@ import type {
   SchoolAnalysis, StudentAnalysis,
 } from './provider';
 import { hasDebt, hasElderly, hasIllness, hasRental, selectQuestions } from './question-templates';
+import { SENT_FIELDS } from './payload';
 
 const LOW_INCOME_THRESHOLD = 10000; // 人均年收入阈值（元）
 const LONG_DISTANCE_KM = 5;
 const FOCUS_FACTOR_THRESHOLD = 3;
-const SENT_FIELD_COUNT = 34; // AnonymizedStudent 字段数（不含 anonymousId）
+const SENT_FIELD_COUNT = SENT_FIELDS.length; // AnonymizedStudent 字段数（不含 anonymousId）
 
 const WEAK_LABOR_KEYWORDS = /弱劳动|劳动能力弱|劳动能力不足|无劳动能力|残疾|患病|不能劳动|重病/;
 const SINGLE_PARENT_KEYWORDS = /单亲|离异|离世|去世|亡故|独自抚养|母亲独自|父亲独自/;

@@ -1,7 +1,8 @@
 import type { AnalysisRequest } from '../types/student';
 
 /** 分析结果契约：只输出分析/核实/建议，严禁「通过/淘汰」类结论 */
-export type Importance = 'high' | 'medium' | 'low';
+export const IMPORTANCE_VALUES = ['high', 'medium', 'low'] as const;
+export type Importance = (typeof IMPORTANCE_VALUES)[number];
 
 export interface DifficultyFactor {
   factor: string;

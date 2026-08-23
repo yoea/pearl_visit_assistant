@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AnalysisRequest, AnonymizedStudent } from '../types/student';
 import { scanPayload, type SecurityScanResult } from '../security/scanner';
+import { IMPORTANCE_VALUES } from './provider';
 
 export const PROTOCOL_VERSION = '1.0' as const;
 
@@ -60,7 +61,7 @@ export function scanOutboundPayload(payload: WireAnalysisRequest): SecurityScanR
 
 // ── 响应契约（zod）──────────────────────────────────────────────
 
-export const importanceSchema = z.enum(['high', 'medium', 'low']);
+export const importanceSchema = z.enum(IMPORTANCE_VALUES);
 
 export const difficultyFactorSchema = z.object({
   factor: z.string().min(1),
