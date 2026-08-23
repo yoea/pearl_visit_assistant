@@ -4,7 +4,7 @@ import type { AnalysisProvider, AnalysisResult } from './provider';
 
 export class SecurityViolationError extends Error {
   constructor(public readonly findings: ReadonlyArray<SecurityFinding>) {
-    super('发送前安全检查未通过');
+    super('数据未通过发送前安全检查，已阻止发送，请返回检查数据。');
     this.name = 'SecurityViolationError';
   }
 }
