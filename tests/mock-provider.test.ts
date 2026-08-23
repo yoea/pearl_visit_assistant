@@ -26,35 +26,42 @@ const requestWith = (students: AnonymizedStudent[]): AnalysisRequest => ({
   students,
 });
 
-describe('MockAnalysisProvider', () => {
-  it('学校级统计正确', async () => {
+describe('MockAnalysisProvider（新结构）', () => {
+  it('学校级统计正确（overview/studentCount/difficultyPatterns）', async () => {
     const provider = new MockAnalysisProvider();
     const result = await provider.analyze(requestWith([
       student(),
       student({ anonymousId: 'student-002', perCapitaIncome: 20000, familySituation: '健康', difficultyReason: '无', debtStatus: '无负债', housingStatus: '自建房', distanceToSchoolKm: 1, schoolChildrenCount: 1, elderlySupportStatus: null, elderlySupportNote: null }),
     ]));
-    expect(result.school.studentCount).toBe(2);
-    expect(result.school.lowIncomeCount).toBe(1);
-    expect(result.school.majorIllnessCount).toBe(1);
-    expect(result.school.highDebtCount).toBe(1);
-    expect(result.school.rentalCount).toBe(1);
-    expect(result.school.longDistanceCount).toBe(1);
-    expect(result.school.focusStudentIds).toEqual(['student-001']);
+    const sa = result.schoolAnalysis;
+    expect(sa.studentCount).toBe(2);
+    expect(sa.overview).toContain('本校共 2 名候选学生');
+    expect(sa.overview).toContain('低收入家庭 1 人');
+    expect(sa.overview).toContain('student-001');
+    expect(sa.difficultyPatterns.length).toBeGreaterThan(0);
+    expect(sa.difficultyPatterns.every((p) => /：\d+人$/.test(p))).toBe(true);
+    expect(sa.interviewSuggestions.length).toBeGreaterThan(0);
   });
 
-  it('学生级：困难因素按权重降序', async () => {
+  it('学生级：困难因素 importance 映射与顺序（weight≥3→high 在前）', async () => {
     const provider = new MockAnalysisProvider();
     const result = await provider.analyze(requestWith([student()]));
-    const guide = result.students[0];
-    const weights = guide.difficultyFactors.map((f) => f.weight);
-    expect([...weights].sort((a, b) => b - a)).toEqual(weights);
-    expect(guide.difficultyFactors.length).toBeGreaterThan(0);
+    const factors = result.students[0].mainDifficultyFactors;
+    expect(factors.length).toBeGreaterThan(0);
+    const order = ['high', 'medium', 'low'];
+    expect(factors.map((f) => f.importance)).toEqual(
+      [...factors.map((f) => f.importance)].sort(
+        (a, b) => order.indexOf(a) - order.indexOf(b),
+      ),
+    );
+    expect(factors[0]).toMatchObject({ factor: '重大疾病', importance: 'high' });
+    for (const f of factors) expect(f.evidence.length).toBeGreaterThan(0);
   });
 
   it('学生级：推荐问题 5-8 个，均为中性问题', async () => {
     const provider = new MockAnalysisProvider();
     const result = await provider.analyze(requestWith([student()]));
-    const qs = result.students[0].suggestedQuestions;
+    const qs = result.students[0].interviewQuestions;
     expect(qs.length).toBeGreaterThanOrEqual(5);
     expect(qs.length).toBeLessThanOrEqual(8);
     for (const q of qs) {
@@ -62,10 +69,10 @@ describe('MockAnalysisProvider', () => {
     }
   });
 
-  it('涉及疾病时给出注意事项', async () => {
+  it('涉及疾病时给出面谈注意事项（interviewNotes）', async () => {
     const provider = new MockAnalysisProvider();
     const result = await provider.analyze(requestWith([student()]));
-    expect(result.students[0].cautions.length).toBeGreaterThan(0);
+    expect(result.students[0].interviewNotes.length).toBeGreaterThan(0);
   });
 
   it('输出不含结论性表述', async () => {
@@ -84,11 +91,12 @@ describe('MockAnalysisProvider', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
-  it('材料缺失被计入完整度', async () => {
+  it('材料缺失被计入 dataQualityIssues', async () => {
     const provider = new MockAnalysisProvider();
     const result = await provider.analyze(requestWith([student()]));
-    const missing = result.school.completeness.perStudent[0].missingCount;
-    expect(missing).toBeGreaterThan(0); // annualIncomeNote/approvalComment 等为 null
+    const issues = result.schoolAnalysis.dataQualityIssues;
+    expect(issues.length).toBeGreaterThan(0); // annualIncomeNote/approvalComment 等为 null
+    expect(issues.some((i) => i.includes('student-001') && i.includes('/34'))).toBe(true);
   });
 
   it('学生级：未命中的因素不出现（健康/无负债学生不产生困难因素）', async () => {
@@ -102,21 +110,10 @@ describe('MockAnalysisProvider', () => {
         healthStatus: '健康', visitSummary: '家庭收入来源单一', annualIncomeNote: '务农',
       }),
     ]));
-    expect(result.students[0].difficultyFactors).toHaveLength(0);
+    expect(result.students[0].mainDifficultyFactors).toHaveLength(0);
   });
 
-  it('basicInfo 过滤空字符串与 null 字段（授权偏离回归测试）', async () => {
-    const provider = new MockAnalysisProvider();
-    const result = await provider.analyze(requestWith([
-      student({ anonymousId: 'student-002', gender: null, ethnicity: '', healthStatus: '健康' }),
-    ]));
-    const labels = result.students[0].basicInfo.map((kv) => kv.label);
-    expect(labels).not.toContain('性别');
-    expect(labels).not.toContain('民族');
-    expect(labels).toContain('健康情况');
-  });
-
-  it('家庭情况字段全缺省时给出占位文案（与申请理由对称）', async () => {
+  it('家庭情况字段全缺省时给出占位文案（familySituation）', async () => {
     const provider = new MockAnalysisProvider();
     const result = await provider.analyze(requestWith([
       student({
@@ -125,6 +122,16 @@ describe('MockAnalysisProvider', () => {
         elderlySupportStatus: null, debtStatus: null, visitSummary: null,
       }),
     ]));
-    expect(result.students[0].familySummary).toBe('材料中未填写家庭情况。');
+    expect(result.students[0].familySituation).toBe('材料中未填写家庭情况。');
+  });
+
+  it('学校级核实主题来自命中的因素（同源 FACTOR_DEFS）', async () => {
+    const provider = new MockAnalysisProvider();
+    const result = await provider.analyze(requestWith([student()]));
+    const topics = result.schoolAnalysis.keyVerificationTopics;
+    // 样本学生：低收入命中、远距命中（8km > 5km）、疾病命中但 topic 为 null
+    expect(topics).toContain('家庭收入来源与日常开支');
+    expect(topics).toContain('往返学校的频率与交通成本');
+    expect(topics).not.toContain('重大疾病'); // 疾病因素无核实主题（topic: null）
   });
 });

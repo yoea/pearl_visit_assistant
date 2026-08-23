@@ -1,50 +1,42 @@
 import type { AnalysisRequest } from '../types/student';
 
 /** 分析结果契约：只输出分析/核实/建议，严禁「通过/淘汰」类结论 */
+export type Importance = 'high' | 'medium' | 'low';
+
 export interface DifficultyFactor {
-  label: string;
-  weight: number; // 越大越重要
-  evidence: string;
+  factor: string;
+  evidence: string; // 必须可追溯到申请材料
+  importance: Importance;
 }
 
-export interface StudentInterviewGuide {
-  anonymousId: string;
-  basicInfo: { label: string; value: string }[];
-  reasonSummary: string;
-  familySummary: string;
-  difficultyFactors: DifficultyFactor[];
-  verificationPoints: string[];
-  suggestedQuestions: string[];
-  cautions: string[];
-}
-
-export interface SchoolOverview {
+export interface SchoolAnalysis {
+  overview: string;
   studentCount: number;
-  difficultyDistribution: Record<string, number>;
-  lowIncomeCount: number;
-  lowIncomeRatio: number; // 0-1
-  majorIllnessCount: number;
-  singleParentOrWeakLaborCount: number;
-  highDebtCount: number;
-  rentalCount: number;
-  longDistanceCount: number;
-  completeness: {
-    totalFields: number;
-    perStudent: { anonymousId: string; missingCount: number }[];
-    averageMissing: number;
-  };
-  focusStudentIds: string[];
-  suggestions: string[];
+  difficultyPatterns: string[];
+  commonIssues: string[];
+  dataQualityIssues: string[];
+  keyVerificationTopics: string[];
+  interviewSuggestions: string[];
+}
+
+export interface StudentAnalysis {
+  studentId: string;
+  summary: string;
+  familySituation: string;
+  mainDifficultyFactors: DifficultyFactor[];
+  informationToVerify: string[];
+  interviewQuestions: string[]; // 契约 5-8 个
+  interviewNotes: string[];
 }
 
 export interface AnalysisResult {
-  school: SchoolOverview;
-  students: StudentInterviewGuide[];
+  schoolAnalysis: SchoolAnalysis;
+  students: StudentAnalysis[];
 }
 
 /**
- * 分析提供者接口。v1 用 MockAnalysisProvider；
- * 未来 DeepSeekAnalysisProvider 实现同一接口（API 地址用户配置，Key 绝不写死在源码）。
+ * 分析提供者接口。Mock 与 DeepSeek 实现同一接口。
+ * 网络 provider 仅经 provider-factory 内部构造（UI 不得直连 provider）。
  */
 export interface AnalysisProvider {
   readonly name: string;

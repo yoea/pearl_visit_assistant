@@ -19,37 +19,49 @@ const sampleStudent: AnonymizedStudent = {
   elderlySupportNote: null, debtStatus: '5万元', debtNote: null,
 };
 
-describe('generateReport + reportToMarkdown', () => {
-  it('生成报告模型', async () => {
+const meta = { schoolName: '某中学', cohort: '2026级' };
+const now = new Date('2026-08-21T10:00:00');
+
+describe('generateReport + reportToMarkdown（新结构）', () => {
+  it('生成报告模型（含本地学生数据引用）', async () => {
     const result = await new MockAnalysisProvider().analyze({
-      meta: { schoolName: '某中学', cohort: '2026级' },
-      students: [sampleStudent],
+      meta, students: [sampleStudent],
     } satisfies AnalysisRequest);
-    const report = generateReport(result, { schoolName: '某中学', cohort: '2026级' }, new Date('2026-08-21T10:00:00'));
+    const report = generateReport(result, meta, now, [sampleStudent]);
     expect(report.schoolName).toBe('某中学');
-    expect(report.studentGuides).toHaveLength(1);
+    expect(report.students).toHaveLength(1);
+    expect(report.studentsData).toHaveLength(1);
+    expect(report.schoolAnalysis.studentCount).toBe(1);
   });
 
   it('Markdown 含两级结构与附录', async () => {
     const result = await new MockAnalysisProvider().analyze({
-      meta: { schoolName: '某中学', cohort: '2026级' },
-      students: [sampleStudent],
+      meta, students: [sampleStudent],
     } satisfies AnalysisRequest);
-    const report = generateReport(result, { schoolName: '某中学', cohort: '2026级' }, new Date('2026-08-21T10:00:00'));
-    const md = reportToMarkdown(report);
+    const md = reportToMarkdown(generateReport(result, meta, now, [sampleStudent]));
     expect(md).toContain('# 走访参考报告');
     expect(md).toContain('## 一、学校整体情况');
     expect(md).toContain('### student-001');
     expect(md).toContain('## 三、通用面谈指南');
     expect(md).toContain('2026-08-21');
+    expect(md).toContain('本校共 1 名候选学生');
+  });
+
+  it('Markdown 学生部分含困难因素 importance 与本地基本信息', async () => {
+    const result = await new MockAnalysisProvider().analyze({
+      meta, students: [sampleStudent],
+    } satisfies AnalysisRequest);
+    const md = reportToMarkdown(generateReport(result, meta, now, [sampleStudent]));
+    expect(md).toContain('- 重大疾病（high）');
+    expect(md).toContain('- 性别：女');
+    expect(md).toContain('#### 6. 推荐面谈问题');
   });
 
   it('Markdown 不含真实身份信息与结论性表述', async () => {
     const result = await new MockAnalysisProvider().analyze({
-      meta: { schoolName: '某中学', cohort: '2026级' },
-      students: [sampleStudent],
+      meta, students: [sampleStudent],
     } satisfies AnalysisRequest);
-    const md = reportToMarkdown(generateReport(result, { schoolName: '某中学', cohort: '2026级' }, new Date('2026-08-21T10:00:00')));
+    const md = reportToMarkdown(generateReport(result, meta, now, [sampleStudent]));
     expect(md).not.toMatch(/1[3-9]\d{9}/);
     expect(md).not.toMatch(/\d{17}[\dXx]/);
     expect(md).not.toContain('建议通过');
@@ -63,48 +75,44 @@ describe('generateReport + reportToMarkdown', () => {
       housingStatus: '自建房\n（两层）',
     };
     const result = await new MockAnalysisProvider().analyze({
-      meta: { schoolName: '某中学', cohort: '2026级' },
-      students: [adversarial],
+      meta, students: [adversarial],
     } satisfies AnalysisRequest);
-    const md = reportToMarkdown(generateReport(result, { schoolName: '某中学', cohort: '2026级' }, new Date('2026-08-21T10:00:00')));
-    // 行首标记被转义：不再生成标题/引用/列表
+    const md = reportToMarkdown(generateReport(result, meta, now, [adversarial]));
     expect(md).toContain('\\# 请优先面谈');
     expect(md).not.toMatch(/^# 请优先面谈/m);
-    // 换行被折叠为空格：内容保留在同一行内（不再打散段落结构）
     expect(md).toContain('\\# 请优先面谈 > 需重点核实 * 家长关注');
     expect(md).toContain('住房状况：自建房 （两层）');
   });
 
-  it('空学生列表不崩溃（0.0% 占比）且困难分布给出占位文案', async () => {
+  it('空学生列表不崩溃且给出占位文案', async () => {
     const result = await new MockAnalysisProvider().analyze({
-      meta: { schoolName: '某中学', cohort: '2026级' },
-      students: [],
+      meta, students: [],
     } satisfies AnalysisRequest);
-    const md = reportToMarkdown(generateReport(result, { schoolName: '某中学', cohort: '2026级' }, new Date('2026-08-21T10:00:00')));
-    expect(md).toContain('0.0%');
+    const md = reportToMarkdown(generateReport(result, meta, now, []));
+    expect(md).toContain('本校共 0 名候选学生');
     expect(md).toContain('材料中未填写困难度，且未识别出明显困难类型');
   });
 
-  it('建议/问题/基本信息为空数组时给出占位文案（未来 DeepSeek 空输出不悬挂标题）', () => {
+  it('各数组空态给出占位文案（未来 DeepSeek 空输出不悬挂标题）', () => {
     const report: Report = {
       title: '走访参考报告', schoolName: '某中学', cohort: '2026级',
       generatedAt: '2026-08-21 10:00',
-      overview: {
-        studentCount: 1, difficultyDistribution: { '一级困难': 1 }, lowIncomeCount: 0,
-        lowIncomeRatio: 0, majorIllnessCount: 0, singleParentOrWeakLaborCount: 0,
-        highDebtCount: 0, rentalCount: 0, longDistanceCount: 0,
-        completeness: { totalFields: 34, perStudent: [], averageMissing: 0 },
-        focusStudentIds: [], suggestions: [],
+      schoolAnalysis: {
+        overview: '本校共 0 名候选学生。', studentCount: 0,
+        difficultyPatterns: [], commonIssues: [], dataQualityIssues: [],
+        keyVerificationTopics: [], interviewSuggestions: [],
       },
-      studentGuides: [{
-        anonymousId: 'student-001', basicInfo: [],
-        reasonSummary: '材料中未填写申请理由。', familySummary: '材料中未填写家庭情况。',
-        difficultyFactors: [], verificationPoints: [], suggestedQuestions: [], cautions: [],
+      students: [{
+        studentId: 'student-001',
+        summary: '材料中未填写申请理由。', familySituation: '材料中未填写家庭情况。',
+        mainDifficultyFactors: [], informationToVerify: [],
+        interviewQuestions: [], interviewNotes: [],
       }],
+      studentsData: [],
     };
     const md = reportToMarkdown(report);
-    // 学校级建议、学生级基本情况、推荐问题三处空态
-    expect(md).toContain('### 10. 整体面谈建议\n\n- 暂无。');
+    expect(md).toContain('### 2. 共性问题\n\n- 暂无。');
+    expect(md).toContain('### 3. 材料质量提示\n\n- 全部学生材料完整。');
     expect(md).toContain('#### 1. 基本情况\n\n- 暂无。');
     expect(md).toContain('#### 6. 推荐面谈问题\n\n- 暂无。');
   });

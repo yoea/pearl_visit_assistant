@@ -17,12 +17,10 @@ const fakeStudent: AnonymizedStudent = {
 };
 
 const fakeResult: AnalysisResult = {
-  school: {
-    studentCount: 1, difficultyDistribution: {}, lowIncomeCount: 0, lowIncomeRatio: 0,
-    majorIllnessCount: 0, singleParentOrWeakLaborCount: 0, highDebtCount: 0,
-    rentalCount: 0, longDistanceCount: 0,
-    completeness: { totalFields: 1, perStudent: [], averageMissing: 0 },
-    focusStudentIds: [], suggestions: [],
+  schoolAnalysis: {
+    overview: '本校共 1 名候选学生。', studentCount: 1,
+    difficultyPatterns: [], commonIssues: [], dataQualityIssues: [],
+    keyVerificationTopics: [], interviewSuggestions: [],
   },
   students: [],
 };

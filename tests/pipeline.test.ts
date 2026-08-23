@@ -14,8 +14,19 @@ const output: AnonymizationOutput = {
 };
 
 const scan = { passed: true, findings: [] };
-const result = { school: { studentCount: 0, difficultyDistribution: {}, lowIncomeCount: 0, lowIncomeRatio: 0, majorIllnessCount: 0, singleParentOrWeakLaborCount: 0, highDebtCount: 0, rentalCount: 0, longDistanceCount: 0, completeness: { totalFields: 31, perStudent: [], averageMissing: 0 }, focusStudentIds: [], suggestions: [] }, students: [] };
-const report = { title: '走访参考报告', schoolName: '某中学', cohort: '2026级', generatedAt: '2026-08-21 10:00', overview: result.school, studentGuides: [] };
+const result = {
+  schoolAnalysis: {
+    overview: '本校共 0 名候选学生。', studentCount: 0,
+    difficultyPatterns: [], commonIssues: [], dataQualityIssues: [],
+    keyVerificationTopics: [], interviewSuggestions: [],
+  },
+  students: [],
+};
+const report = {
+  title: '走访参考报告', schoolName: '某中学', cohort: '2026级',
+  generatedAt: '2026-08-21 10:00',
+  schoolAnalysis: result.schoolAnalysis, students: [], studentsData: [],
+};
 
 describe('pipelineReducer', () => {
   it('合法链路 idle→parsed→anonymized→scanned→analyzed', () => {

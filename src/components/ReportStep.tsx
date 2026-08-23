@@ -1,10 +1,92 @@
 import { useMemo, useState } from 'react';
 import type { Report } from '../report/types';
+import type { StudentAnalysis } from '../analysis/provider';
+import type { AnonymizedStudent } from '../types/student';
 import { reportToMarkdown } from '../report/markdown';
 import { downloadTextFile } from '../utils/download';
+import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Badge from './ui/Badge';
+
+const IMPORTANCE_TONE: Record<string, string> = { high: 'amber', medium: 'blue', low: 'slate' };
+
+/** 本地学生数据 → 基本信息行（null/空串过滤，anonymousId 不展示） */
+function basicInfoOf(s: AnonymizedStudent): [string, string][] {
+  const out: [string, string][] = [];
+  for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
+    if (k === 'anonymousId') continue;
+    const v = s[k];
+    if (v == null || v === '') continue;
+    out.push([STUDENT_FIELD_LABELS[k], String(v)]);
+  }
+  return out;
+}
+
+function StudentSection({ g, local }: {
+  g: StudentAnalysis;
+  local: AnonymizedStudent | undefined;
+}) {
+  const basics = local ? basicInfoOf(local) : [];
+  return (
+    <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
+      {basics.length > 0 && (
+        <section>
+          <h4 className="font-medium text-slate-700">基本情况</h4>
+          <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+            {basics.map(([label, value]) => <li key={label}>· {label}：{value}</li>)}
+          </ul>
+        </section>
+      )}
+      <section>
+        <h4 className="font-medium text-slate-700">材料要点摘要</h4>
+        <p className="mt-1 text-xs text-slate-600">{g.summary}</p>
+      </section>
+      <section>
+        <h4 className="font-medium text-slate-700">家庭情况概括</h4>
+        <p className="mt-1 text-xs text-slate-600">{g.familySituation}</p>
+      </section>
+      <section>
+        <h4 className="font-medium text-slate-700">主要困难因素</h4>
+        {g.mainDifficultyFactors.length > 0 ? (
+          <ul className="mt-1 space-y-1 text-xs text-slate-600">
+            {g.mainDifficultyFactors.map((f) => (
+              <li key={f.factor} className="flex flex-wrap items-center gap-2">
+                <Badge tone={IMPORTANCE_TONE[f.importance]}>{f.importance}</Badge>
+                <span className="font-medium">{f.factor}</span>
+                <span className="text-slate-500">{f.evidence}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-xs text-slate-400">材料中未识别出明显困难因素。</p>
+        )}
+      </section>
+      {g.informationToVerify.length > 0 && (
+        <section>
+          <h4 className="font-medium text-amber-700">需要重点核实</h4>
+          <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+            {g.informationToVerify.map((v) => <li key={v}>· {v}</li>)}
+          </ul>
+        </section>
+      )}
+      <section>
+        <h4 className="font-medium text-slate-700">推荐面谈问题</h4>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-slate-600">
+          {g.interviewQuestions.map((q) => <li key={q}>{q}</li>)}
+        </ol>
+      </section>
+      {g.interviewNotes.length > 0 && (
+        <section>
+          <h4 className="font-medium text-amber-700">面谈注意事项</h4>
+          <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
+            {g.interviewNotes.map((c) => <li key={c}>· {c}</li>)}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
 
 export default function ReportStep({
   report, nameIndex, onReset,
@@ -16,16 +98,21 @@ export default function ReportStep({
   const [open, setOpen] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
-  // 本地姓名查找：仅内存匹配（anonymousId ↔ 姓名），绝不发送、绝不展示在报告数据中
+  // 本地姓名查找：仅内存匹配（匿名 ID ↔ 姓名），绝不发送
   const matches = useMemo(() => {
     const q = query.trim();
     if (q === '') return [];
-    const hits: { anonymousId: string; name: string }[] = [];
+    const hits: { id: string; name: string }[] = [];
     for (const [id, name] of nameIndex.entries()) {
-      if (name.includes(q)) hits.push({ anonymousId: id, name });
+      if (name.includes(q)) hits.push({ id, name });
     }
     return hits.slice(0, 10);
   }, [query, nameIndex]);
+
+  const dataById = useMemo(
+    () => new Map(report.studentsData.map((s) => [s.anonymousId, s] as const)),
+    [report.studentsData],
+  );
 
   const download = () => {
     const md = reportToMarkdown(report);
@@ -33,7 +120,7 @@ export default function ReportStep({
     downloadTextFile(`走访参考报告-${report.schoolName}-${date}.md`, md, 'text/markdown;charset=utf-8');
   };
 
-  const o = report.overview;
+  const sa = report.schoolAnalysis;
 
   return (
     <div className="space-y-4">
@@ -67,13 +154,13 @@ export default function ReportStep({
           {matches.length > 0 && (
             <ul className="mt-2 space-y-1">
               {matches.map((m) => (
-                <li key={m.anonymousId}>
+                <li key={m.id}>
                   <button
                     type="button"
-                    onClick={() => setOpen(m.anonymousId)}
+                    onClick={() => setOpen(m.id)}
                     className="text-sm text-emerald-700 hover:underline"
                   >
-                    {m.anonymousId}（{m.name}）
+                    {m.id}（{m.name}）
                   </button>
                 </li>
               ))}
@@ -84,89 +171,68 @@ export default function ReportStep({
 
       <Card>
         <h3 className="text-base font-semibold text-slate-800">一、学校整体情况</h3>
-        <p className="mt-2 text-sm text-slate-700">本校共 {o.studentCount} 名候选学生。</p>
-        <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          {[
-            ['低收入家庭', `${o.lowIncomeCount} 人（${(o.lowIncomeRatio * 100).toFixed(1)}%）`],
-            ['重大疾病家庭', `${o.majorIllnessCount} 个`],
-            ['单亲/弱劳动能力家庭', `${o.singleParentOrWeakLaborCount} 个`],
-            ['高负债家庭', `${o.highDebtCount} 个`],
-            ['租房家庭', `${o.rentalCount} 个`],
-            ['远距通学（>5km）', `${o.longDistanceCount} 人`],
-            ['值得重点关注', `${o.focusStudentIds.length} 名`],
-            ['材料平均缺失字段', `${o.completeness.averageMissing.toFixed(1)} / ${o.completeness.totalFields}`],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between border-b border-slate-100 pb-1">
-              <dt className="text-slate-500">{label}</dt>
-              <dd className="font-medium text-slate-800">{value}</dd>
+        <p className="mt-2 text-sm text-slate-700">{sa.overview}</p>
+        {sa.difficultyPatterns.length > 0 && (
+          <div className="mt-3">
+            <p className="text-xs font-medium text-slate-500">困难类型分布</p>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {sa.difficultyPatterns.map((p) => <Badge key={p} tone="slate">{p}</Badge>)}
             </div>
-          ))}
-        </dl>
-        <div className="mt-3">
-          <p className="text-xs font-medium text-slate-500">困难类型分布</p>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {Object.entries(o.difficultyDistribution).map(([k, v]) => (
-              <Badge key={k} tone="slate">{k}：{v} 人</Badge>
-            ))}
-            {Object.keys(o.difficultyDistribution).length === 0 && <span className="text-xs text-slate-400">未识别</span>}
           </div>
-        </div>
+        )}
+        <section className="mt-3">
+          <h4 className="text-sm font-medium text-slate-700">共性问题</h4>
+          <ul className="mt-1 space-y-0.5 text-sm text-slate-600">
+            {sa.commonIssues.map((i) => <li key={i}>· {i}</li>)}
+            {sa.commonIssues.length === 0 && <li className="text-xs text-slate-400">暂无。</li>}
+          </ul>
+        </section>
+        {sa.dataQualityIssues.length > 0 && (
+          <section className="mt-3 rounded bg-amber-50 p-3">
+            <h4 className="text-sm font-medium text-amber-800">材料质量提示</h4>
+            <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
+              {sa.dataQualityIssues.map((i) => <li key={i}>· {i}</li>)}
+            </ul>
+          </section>
+        )}
+        <section className="mt-3">
+          <h4 className="text-sm font-medium text-slate-700">重点核实主题</h4>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {sa.keyVerificationTopics.map((t) => <Badge key={t} tone="blue">{t}</Badge>)}
+            {sa.keyVerificationTopics.length === 0 && <span className="text-xs text-slate-400">暂无。</span>}
+          </div>
+        </section>
+        <section className="mt-3">
+          <h4 className="text-sm font-medium text-slate-700">整体面谈建议</h4>
+          <ul className="mt-1 space-y-0.5 text-sm text-slate-600">
+            {sa.interviewSuggestions.map((s) => <li key={s}>· {s}</li>)}
+            {sa.interviewSuggestions.length === 0 && <li className="text-xs text-slate-400">暂无。</li>}
+          </ul>
+        </section>
       </Card>
 
       <Card>
         <h3 className="text-base font-semibold text-slate-800">二、单个学生面谈参考</h3>
         <div className="mt-3 space-y-2">
-          {report.studentGuides.map((g) => (
-            <div key={g.anonymousId} className="rounded border border-slate-200">
+          {report.students.map((g) => (
+            <div key={g.studentId} className="rounded border border-slate-200">
               <button
                 type="button"
-                onClick={() => setOpen(open === g.anonymousId ? null : g.anonymousId)}
+                onClick={() => setOpen(open === g.studentId ? null : g.studentId)}
                 className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                <span>{g.anonymousId}</span>
-                <span className="text-xs text-slate-400">{open === g.anonymousId ? '收起' : '展开'}</span>
+                <span className="flex items-center gap-2">
+                  {nameIndex.get(g.studentId) ?? g.studentId}
+                  <span className="text-xs font-normal text-slate-400">{g.studentId}</span>
+                  <Badge tone="green">{g.mainDifficultyFactors.filter((f) => f.importance === 'high').length} high</Badge>
+                </span>
+                <span className="text-xs text-slate-400">{open === g.studentId ? '收起' : '展开'}</span>
               </button>
-              {open === g.anonymousId && (
-                <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
-                  <section>
-                    <h4 className="font-medium text-slate-700">基本情况</h4>
-                    <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
-                      {g.basicInfo.map((kv) => <li key={kv.label}>· {kv.label}：{kv.value}</li>)}
-                    </ul>
-                  </section>
-                  <section>
-                    <h4 className="font-medium text-slate-700">申请原因概括</h4>
-                    <p className="mt-1 text-xs text-slate-600">{g.reasonSummary}</p>
-                  </section>
-                  <section>
-                    <h4 className="font-medium text-slate-700">家庭情况概括</h4>
-                    <p className="mt-1 text-xs text-slate-600">{g.familySummary}</p>
-                  </section>
-                  <section>
-                    <h4 className="font-medium text-slate-700">主要困难因素</h4>
-                    <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
-                      {g.difficultyFactors.map((f) => <li key={f.label}>· {f.label}：{f.evidence}</li>)}
-                    </ul>
-                  </section>
-                  <section>
-                    <h4 className="font-medium text-slate-700">需要重点核实</h4>
-                    <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
-                      {g.verificationPoints.map((v) => <li key={v}>· {v}</li>)}
-                    </ul>
-                  </section>
-                  <section>
-                    <h4 className="font-medium text-slate-700">推荐面谈问题</h4>
-                    <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-slate-600">
-                      {g.suggestedQuestions.map((q) => <li key={q}>{q}</li>)}
-                    </ol>
-                  </section>
-                  <section>
-                    <h4 className="font-medium text-slate-700">面谈注意事项</h4>
-                    <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
-                      {g.cautions.map((c) => <li key={c}>· {c}</li>)}
-                    </ul>
-                  </section>
-                </div>
+              {open === g.studentId && (
+                <StudentSection
+                  g={g}
+                  local={dataById.get(g.studentId)}
+                />
               )}
             </div>
           ))}
