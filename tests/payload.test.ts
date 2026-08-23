@@ -177,7 +177,8 @@ describe('parseResponseText（JSON 修复一次）', () => {
     expect(parseResponseText('')).toBeNull();
   });
 
-  it('escaped 引号不提前终止字符串（修复后解析成功）', () => {
-    expect(parseResponseText('{"a":"\\"}"}')).toEqual({ a: '"}' });
+  it('escaped 引号不提前终止字符串（修复路径解析成功）', () => {
+    // 带前缀文本：直接 JSON.parse 必失败，必须走 extractJsonObject 修复分支
+    expect(parseResponseText('说明文字\n{"a":"\\"}"}')).toEqual({ a: '"}' });
   });
 });

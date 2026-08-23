@@ -31,8 +31,11 @@ const relOf = (f: string) => relative(srcDir, f).split('\\').join('/');
 const FORBIDDEN_TOKENS = [
   'localStorage', 'sessionStorage', 'indexedDB', 'document.cookie',
   'axios', 'XMLHttpRequest', 'sendBeacon', 'WebSocket', 'process.',
-  'console.log', 'console.info', 'console.debug', 'console.trace',
 ];
+
+/** console 除 warn/error（仅 analysis/ 目录允许，见第三个 it）外全禁——
+ *  正则负向前瞻杜绝 console.table/dir/group/count/time/assert 等数据日志方法漏网 */
+const FORBIDDEN_CONSOLE_RE = /console\.(?!warn|error)/;
 
 /** fetch( 唯一白名单文件（相对 src/） */
 const FETCH_WHITELIST = new Set(['analysis/analysis-client.ts']);
@@ -57,6 +60,7 @@ describe('隐私红线静态守卫', () => {
       for (const token of FORBIDDEN_TOKENS) {
         if (content.includes(token)) hits.push(`${relOf(f)}: ${token}`);
       }
+      if (FORBIDDEN_CONSOLE_RE.test(content)) hits.push(`${relOf(f)}: console.<非warn/error>`);
     }
     expect(hits).toEqual([]);
   });
