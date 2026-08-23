@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MockAnalysisProvider } from '../src/analysis/mock-provider';
+import { PROTOCOL_VERSION, wireResponseSchema } from '../src/analysis/payload';
 import type { AnalysisRequest, AnonymizedStudent } from '../src/types/student';
 
 function student(overrides: Partial<AnonymizedStudent> = {}): AnonymizedStudent {
@@ -133,5 +134,12 @@ describe('MockAnalysisProvider（新结构）', () => {
     expect(topics).toContain('家庭收入来源与日常开支');
     expect(topics).toContain('往返学校的频率与交通成本');
     expect(topics).not.toContain('重大疾病'); // 疾病因素无核实主题（topic: null）
+  });
+
+  it('Mock 输出通过 wire 响应契约校验（与真实 provider 同构）', async () => {
+    const provider = new MockAnalysisProvider();
+    const result = await provider.analyze(requestWith([student()]));
+    const r = wireResponseSchema.safeParse({ version: PROTOCOL_VERSION, ...result });
+    expect(r.success).toBe(true);
   });
 });
