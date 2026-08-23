@@ -126,4 +126,14 @@ describe('DeepSeekAnalysisProvider', () => {
     const result = await provider.analyze(two);
     expect(result.students).toHaveLength(2);
   });
+
+  it('重扫②专属：类型断言走私白名单外字段 → 拦截（终扫③无法感知）', async () => {
+    const { provider, fetchMock } = makeProvider();
+    const bad: AnalysisRequest = {
+      ...request,
+      students: [{ ...cleanStudent, 姓名: '张三' } as AnonymizedStudent],
+    };
+    await expect(provider.analyze(bad)).rejects.toBeInstanceOf(SecurityViolationError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
