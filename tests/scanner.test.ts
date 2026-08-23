@@ -162,4 +162,25 @@ describe('scanPayload', () => {
     expect(r.passed).toBe(false);
     expect(r.findings[0].category).toBe('malformed-payload');
   });
+
+  it('出站 wire 结构：school.name 默认触发地址子句，豁免后通过（其余规则照常）', () => {
+    const wire = {
+      version: '1.0', requestId: 'x', school: { name: '大庆市杜尔伯特蒙古族自治县第一中学' },
+      cohort: '2026级', students: [{ id: 'student-001', data: { housingStatus: '自建房' } }],
+    };
+    // 默认（无豁免）：school.name 含省市 → 地址子句命中
+    expect(scanPayload(wire, new Set()).passed).toBe(false);
+    // 豁免 school.name 地址子句：通过
+    expect(scanPayload(wire, new Set(), { exemptAddressPaths: ['school.name'] }).passed).toBe(true);
+    // 豁免只作用于地址子句：data 内手机号仍拒绝
+    const withMobile = {
+      ...wire,
+      students: [{ id: 'student-001', data: { housingStatus: '电话13800138000' } }],
+    };
+    expect(scanPayload(withMobile, new Set(), { exemptAddressPaths: ['school.name'] }).passed).toBe(false);
+  });
+
+  it('豁免参数缺省时行为与旧版完全一致（第一阶段调用不受影响）', () => {
+    expect(scanPayload(cleanRequest, new Set(['测试甲'])).passed).toBe(true);
+  });
 });

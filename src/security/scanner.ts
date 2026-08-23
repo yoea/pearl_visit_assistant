@@ -32,6 +32,7 @@ function walk(
   path: string,
   isStructuredRegion: boolean,
   isSchoolName: boolean,
+  exemptAddressPaths: readonly string[],
   findings: SecurityFinding[],
 ): void {
   if (node == null) return;
@@ -52,7 +53,7 @@ function walk(
     // 地址子句检测（与清洗器同源逻辑）：同一子句内互异地址词 ≥2 个 → 命中
     // 学校名/结构化地区字段豁免：省/市/县/籍贯含区域词属合法值，校名常含省市县字样
     // （均经用户确认发送）；其余规则照常扫描
-    if (!isSchoolName && !isStructuredRegion) {
+    if (!isSchoolName && !isStructuredRegion && !exemptAddressPaths.includes(path)) {
       for (const seg of node.split(CLAUSE_SPLIT)) {
         if (CLAUSE_SEP_CHAR.test(seg)) continue;
         const tokens = new Set(seg.match(ADDRESS_TOKENS) ?? []);
@@ -87,7 +88,7 @@ function walk(
     return;
   }
   if (Array.isArray(node)) {
-    node.forEach((item, i) => walk(item, `${path}[${i}]`, false, false, findings));
+    node.forEach((item, i) => walk(item, `${path}[${i}]`, false, false, exemptAddressPaths, findings));
     return;
   }
   if (typeof node === 'object') {
@@ -97,17 +98,28 @@ function walk(
         path === '' ? k : `${path}.${k}`,
         STRUCTURED_REGION_KEYS.has(k),
         k === 'schoolName',
+        exemptAddressPaths,
         findings,
       );
     }
   }
 }
 
+export interface ScanOptions {
+  /** 豁免地址子句检测的字段路径（如出站 wire 结构的 'school.name'）。
+   *  只豁免地址子句，其余规则（证件/电话/姓名模式/字段名）照常扫描。 */
+  exemptAddressPaths?: readonly string[];
+}
+
 /**
  * 发送前安全硬闸：对完整 payload 做最后扫描。
  * 命中即 passed=false；调用方（AnalysisService）必须拒绝发送。
  */
-export function scanPayload(payload: unknown, nameBlacklist: Set<string>): SecurityScanResult {
+export function scanPayload(
+  payload: unknown,
+  nameBlacklist: Set<string>,
+  options: ScanOptions = {},
+): SecurityScanResult {
   // 0. 结构性守卫：fail-closed，绝不抛异常
   if (payload === null || typeof payload !== 'object') {
     return {
@@ -117,6 +129,7 @@ export function scanPayload(payload: unknown, nameBlacklist: Set<string>): Secur
   }
 
   const findings: SecurityFinding[] = [];
+  const exemptAddressPaths = options.exemptAddressPaths ?? [];
 
   // 1. 姓名黑名单：全 payload 精确匹配
   let json: string;
@@ -142,7 +155,7 @@ export function scanPayload(payload: unknown, nameBlacklist: Set<string>): Secur
   }
 
   // 2. 字段值规则扫描
-  walk(payload, '', false, false, findings);
+  walk(payload, '', false, false, exemptAddressPaths, findings);
 
   // 3. 禁止字段名检查
   const keys = [...Object.keys(payload)];
