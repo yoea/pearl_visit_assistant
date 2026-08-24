@@ -20,14 +20,13 @@ const CHECK_LABELS = [
 ] as const;
 
 export default function SecurityStep({
-  output, scan, onAnalyze, analyzing, error, onReset,
+  output, scan, onNext, onReset,
 }: {
   output: AnonymizationOutput;
   /** scanned 阶段一定携带扫描结果（pipeline 判别联合保证），无「未扫描」态 */
   scan: SecurityScanResult;
-  onAnalyze: () => void;
-  analyzing: boolean;
-  error?: string;
+  /** 进入发送预览（扫描通过后），分析由 SendPreviewStep 手动确认触发 */
+  onNext: () => void;
   onReset: () => void;
 }) {
   const hitKeys = new Set(scan.findings.map((f) => f.category));
@@ -50,9 +49,7 @@ export default function SecurityStep({
               ))}
             </ul>
             <div className="mt-4">
-              <Button onClick={onAnalyze} disabled={analyzing}>
-                {analyzing ? 'AI 分析中…' : '开始 AI 分析'}
-              </Button>
+              <Button onClick={onNext}>下一步：发送预览</Button>
             </div>
           </div>
         ) : (
@@ -82,7 +79,6 @@ export default function SecurityStep({
             </div>
           </div>
         )}
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
     </Card>
   );

@@ -5,8 +5,8 @@ import { mapFields } from './anonymization/field-mapper';
 import { rawStore } from './anonymization/raw-store';
 import { anonymize } from './anonymization/anonymizer';
 import { scanPayload } from './security/scanner';
-import { AnalysisService } from './analysis/analysis-service';
-import { MockAnalysisProvider } from './analysis/mock-provider';
+import { createAnalysisService } from './analysis/provider-factory';
+import { AnalysisClientError, SecurityViolationError } from './analysis/analysis-service';
 import { generateReport } from './report/generator';
 import { InMemoryUsageStats } from './stats/usage-stats';
 import type { RawStudentRecord } from './types/student';
@@ -17,10 +17,12 @@ import MappingStep from './components/MappingStep';
 import AnonymizeStep from './components/AnonymizeStep';
 import PreviewStep from './components/PreviewStep';
 import SecurityStep from './components/SecurityStep';
+import SendPreviewStep from './components/SendPreviewStep';
 import ReportStep from './components/ReportStep';
 
 const usageStats = new InMemoryUsageStats();
-const analysisService = new AnalysisService(new MockAnalysisProvider());
+// provider 种类由环境变量决定（mock 默认 / real），网络 provider 仅工厂内部构造
+const analysisService = createAnalysisService();
 
 /** 阶段 → 步骤条序号（与 Stage 联合类型编译期锁定，漏配即报错） */
 const STAGE_TO_STEP: Record<Stage, number> = {
@@ -30,6 +32,7 @@ const STAGE_TO_STEP: Record<Stage, number> = {
 export default function App() {
   const [state, dispatch] = useReducer(pipelineReducer, { stage: 'idle' });
   const [anonymizedView, setAnonymizedView] = useState<'stats' | 'preview'>('stats');
+  const [confirmView, setConfirmView] = useState(false);
   const [importError, setImportError] = useState<string | undefined>();
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | undefined>();
@@ -75,6 +78,7 @@ export default function App() {
 
   const handleScan = useCallback(() => {
     if (state.stage !== 'anonymized') return;
+    setConfirmView(false);
     const request = { meta: metaRef.current, students: state.output.students };
     const scan = scanPayload(request, nameBlacklistRef.current);
     dispatch({ type: 'SCAN_SUCCEEDED', output: state.output, scan });
@@ -84,12 +88,11 @@ export default function App() {
     if (state.stage !== 'scanned' || !state.scan.passed || analyzing) return;
     setAnalyzing(true);
     setAnalyzeError(undefined);
+    usageStats.record('analysisStarted');
     try {
       const request = { meta: metaRef.current, students: state.output.students };
       const result = await analysisService.analyze(request, nameBlacklistRef.current);
       const report = generateReport(result, metaRef.current, new Date(), state.output.students);
-      // 注意：analysisSucceeded 不带人数——totalStudents 语义为「导入学生人数总和」，
-      // 同一批学生已在 imported 计过，若此处再计会虚高一倍（Task 12 复审裁决）。
       usageStats.record('analysisSucceeded');
       dispatch({
         type: 'ANALYSIS_SUCCEEDED',
@@ -99,6 +102,13 @@ export default function App() {
         report,
       });
     } catch (e) {
+      // 统计只记录错误类别（白名单），绝不含服务端错误原文
+      const category =
+        e instanceof AnalysisClientError ? e.category
+          : e instanceof SecurityViolationError ? 'security'
+            : 'unknown';
+      usageStats.record('analysisFailed', { errorCategory: category });
+      // 错误文案：client 与安全检查错误的消息即分类文案，直显不包装
       setAnalyzeError(e instanceof Error ? e.message : 'AI 分析失败');
     } finally {
       setAnalyzing(false);
@@ -112,6 +122,7 @@ export default function App() {
     setImportError(undefined);
     setAnalyzeError(undefined);
     setAnonymizedView('stats');
+    setConfirmView(false);
     dispatch({ type: 'RESET' });
   }, []);
 
@@ -137,14 +148,23 @@ export default function App() {
         {state.stage === 'anonymized' && anonymizedView === 'preview' && (
           <PreviewStep output={state.output} onNext={handleScan} onBack={() => setAnonymizedView('stats')} />
         )}
-        {state.stage === 'scanned' && (
+        {state.stage === 'scanned' && !confirmView && (
           <SecurityStep
             output={state.output}
             scan={state.scan}
-            onAnalyze={() => void handleAnalyze()}
+            onNext={() => setConfirmView(true)}
+            onReset={handleReset}
+          />
+        )}
+        {state.stage === 'scanned' && confirmView && (
+          <SendPreviewStep
+            output={state.output}
+            meta={metaRef.current}
+            providerName={analysisService.providerName}
             analyzing={analyzing}
             error={analyzeError}
-            onReset={handleReset}
+            onBack={() => setConfirmView(false)}
+            onConfirm={() => void handleAnalyze()}
           />
         )}
         {state.stage === 'analyzed' && (
