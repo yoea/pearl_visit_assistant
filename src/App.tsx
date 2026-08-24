@@ -88,9 +88,9 @@ export default function App() {
       const request = { meta: metaRef.current, students: state.output.students };
       const result = await analysisService.analyze(request, nameBlacklistRef.current);
       const report = generateReport(result, metaRef.current, new Date(), state.output.students);
-      // 注意：analysisCompleted 不带人数——totalStudents 语义为「导入学生人数总和」，
+      // 注意：analysisSucceeded 不带人数——totalStudents 语义为「导入学生人数总和」，
       // 同一批学生已在 imported 计过，若此处再计会虚高一倍（Task 12 复审裁决）。
-      usageStats.record('analysisCompleted');
+      usageStats.record('analysisSucceeded');
       dispatch({
         type: 'ANALYSIS_SUCCEEDED',
         output: state.output,
