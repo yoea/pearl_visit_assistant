@@ -14,8 +14,8 @@
  */
 
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { dirname, join, normalize, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -33,11 +33,57 @@ function loadEnv() {
 
 loadEnv();
 
-const PORT = Number(process.env.PORT || 8787);
+const PORT = Number(process.env.PORT || 5000);
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 const API_KEY = process.env.DEEPSEEK_API_KEY;
 const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 const MAX_STUDENTS = 200; // 滥用防御：单次请求学生数上限
+
+/* ---------- 静态页面托管（同源单服务模式：页面与 /api 同一端口） ---------- */
+
+const STATIC_DIR = process.env.STATIC_DIR || join(__dirname, '..', 'dist');
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+/** 只允许静态目录内的文件；路径穿越/盘符一律拒绝 */
+function safeStaticPath(pathname) {
+  const root = normalize(STATIC_DIR);
+  const rel = decodeURIComponent(pathname).replace(/^\/+/, '');
+  const full = normalize(join(root, rel));
+  return full === root || full.startsWith(root + sep) ? full : null;
+}
+
+function serveStatic(req, res) {
+  const requested = safeStaticPath(req.url);
+  if (!requested) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+  let file = requested;
+  try {
+    if (statSync(file).isDirectory()) file = join(file, 'index.html');
+  } catch {
+    file = join(STATIC_DIR, 'index.html'); // SPA fallback：未知路径回 index.html
+  }
+  try {
+    const content = readFileSync(file);
+    const type = MIME[extname(file)] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': type });
+    res.end(content);
+  } catch {
+    res.writeHead(404);
+    res.end('Not Found');
+  }
+}
 
 /* ---------- 服务端提示词（契约 4.5 全部约束，服务端必做） ---------- */
 
@@ -161,11 +207,18 @@ const server = http.createServer(async (req, res) => {
     res.end();
     return;
   }
-  if (req.method !== 'POST' || req.url !== '/api/analyze') {
-    send(res, 404, JSON.stringify({ error: 'not_found' }));
+  if (req.method === 'POST' && req.url === '/api/analyze') {
+    await handleAnalyze(req, res);
     return;
   }
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    serveStatic(req, res); // 静态页面（同源模式页面也从本服务加载）
+    return;
+  }
+  send(res, 404, JSON.stringify({ error: 'not_found' }));
+});
 
+async function handleAnalyze(req, res) {
   const start = Date.now();
   let requestId = 'unknown';
   try {
@@ -218,10 +271,15 @@ const server = http.createServer(async (req, res) => {
     logWhitelist(requestId, 0, Date.now() - start, false, errType);
     send(res, 500, JSON.stringify({ error: 'internal' }));
   }
-});
+}
 
 server.listen(PORT, () => {
-  console.log(`分析服务器已启动: http://localhost:${PORT}/api/analyze`);
-  console.log(`模型: ${MODEL} | API Key: ${API_KEY ? '已配置' : '未配置（请在 server/.env 填入 DEEPSEEK_API_KEY）'}`);
+  console.log('========================================');
+  console.log(`单服务模式已启动（同源，无跨域）:`);
+  console.log(`  页面: http://localhost:${PORT}/`);
+  console.log(`  分析: http://localhost:${PORT}/api/analyze`);
+  console.log(`  静态目录: ${STATIC_DIR}${existsSync(STATIC_DIR) ? '' : '（未找到，请先 npm run build）'}`);
+  console.log(`  模型: ${MODEL} | API Key: ${API_KEY ? '已配置' : '未配置（请在 server/.env 填入 DEEPSEEK_API_KEY）'}`);
+  console.log('========================================');
   console.log('日志仅含白名单字段（requestId/耗时/学生数/成败/错误类型），不含任何学生数据。');
 });

@@ -54,8 +54,9 @@ npm test           # 运行全部测试
 「绝不发送」字段清单（姓名/证件/电话/住址/教师姓名/珍珠号/原始文件等）。
 AI 分析结果只存当前页面内存，刷新即失；报告需手动下载。
 
-### 本地分析服务器（DeepSeek 中转）
+### 本地分析服务器（DeepSeek 中转，单服务同源模式）
 
-页面部署在静态服务器（如 ECS/Nginx），分析服务器跑在使用者自己电脑上
-（Key 只存在于本机 `server/.env`，数据全程不出用户电脑）。部署与启动说明见
-[`server/README.md`](server/README.md)（双击 `server/start-server.bat` 即启动）。
+**一个 Node 服务同时托管页面与分析 API（同端口，默认 5000，无跨域）**：
+使用者本机跑 `server/start-server.bat`（Key 只存在于本机 `server/.env`），
+浏览器打开 `http://localhost:5000` 即可使用，学生数据（含脱敏后）全程不出用户电脑。
+部署与启动说明见 [`server/README.md`](server/README.md)。
