@@ -23,14 +23,18 @@ function resolveTimeout(raw: string | undefined): number {
  * 绝不引入任何 API Key 相关环境变量（Key 只存在于分析服务器端）。
  */
 export function createAnalysisService(config: AnalysisServiceConfig = {}): AnalysisService {
-  const provider = import.meta.env.VITE_ANALYSIS_PROVIDER;
+  const provider = import.meta.env.VITE_ANALYSIS_PROVIDER?.trim().toLowerCase();
   if (provider === 'real') {
     const apiUrl = config.apiUrl ?? import.meta.env.VITE_ANALYSIS_API_URL;
     if (!apiUrl) {
       console.warn('已配置真实 AI 分析但未提供 API 地址，本次会话回退到本地模拟分析。');
       return new AnalysisService(new MockAnalysisProvider());
     }
-    const timeoutMs = config.timeoutMs ?? resolveTimeout(import.meta.env.VITE_ANALYSIS_TIMEOUT_MS);
+    const timeoutMs = resolveTimeout(
+      config.timeoutMs !== undefined
+        ? String(config.timeoutMs)
+        : import.meta.env.VITE_ANALYSIS_TIMEOUT_MS,
+    );
     return new AnalysisService(
       new DeepSeekAnalysisProvider(new AnalysisClient({ apiUrl, timeoutMs })),
     );

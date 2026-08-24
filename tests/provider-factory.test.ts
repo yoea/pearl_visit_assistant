@@ -83,7 +83,32 @@ describe('createAnalysisService', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('VITE_ANALYSIS_TIMEOUT_MS 非法值 → 默认 30s；合法值 → 生效（config 覆盖）', async () => {
+  it('provider 值含空白/大小写（" Real "）→ 归一化后走 real 通路', async () => {
+    vi.stubEnv('VITE_ANALYSIS_PROVIDER', ' Real ');
+    vi.stubEnv('VITE_ANALYSIS_API_URL', 'https://example.org/api/analyze');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      text: async () => JSON.stringify({
+        version: '1.0',
+        schoolAnalysis: {
+          overview: '本校共 1 名候选学生。', studentCount: 1,
+          difficultyPatterns: [], commonIssues: [], dataQualityIssues: [],
+          keyVerificationTopics: [], interviewSuggestions: [],
+        },
+        students: [{
+          studentId: 'student-001', summary: 's', familySituation: 'f',
+          mainDifficultyFactors: [], informationToVerify: [],
+          interviewQuestions: ['q1', 'q2', 'q3', 'q4', 'q5'], interviewNotes: [],
+        }],
+      }),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const service = createAnalysisService();
+    await service.analyze(request, new Set());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('VITE_ANALYSIS_TIMEOUT_MS 非法值 → 默认 30s 且构造不抛；config.timeoutMs 合法值可正常传入', async () => {
     vi.stubEnv('VITE_ANALYSIS_PROVIDER', 'real');
     vi.stubEnv('VITE_ANALYSIS_API_URL', 'https://example.org/api/analyze');
     vi.stubEnv('VITE_ANALYSIS_TIMEOUT_MS', 'abc');
@@ -105,7 +130,7 @@ describe('createAnalysisService', () => {
     } as Response);
     vi.stubGlobal('fetch', fetchMock);
     expect(() => createAnalysisService()).not.toThrow();
-    // config.timeoutMs 覆盖 env（200ms 内完成）
+    // config.timeoutMs 传入合法值：服务可用（超时行为本身由 analysis-client 测试覆盖）
     const service = createAnalysisService({ timeoutMs: 30_000 });
     const result = await service.analyze(request, new Set());
     expect(result.schoolAnalysis.studentCount).toBe(1);

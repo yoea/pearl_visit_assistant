@@ -97,4 +97,21 @@ describe('隐私红线静态守卫', () => {
     }
     expect(hits).toEqual([]);
   });
+
+  it('网络/真实分析类只允许工厂与链路内部引用（UI 唯一入口）', () => {
+    const IMPORT_WHITELIST: Record<string, Set<string>> = {
+      'analysis-client': new Set(['analysis/deepseek-provider.ts', 'analysis/provider-factory.ts']),
+      'deepseek-provider': new Set(['analysis/provider-factory.ts']),
+    };
+    const hits: string[] = [];
+    for (const f of files) {
+      const rel = relOf(f);
+      const content = readFileSync(f, 'utf8');
+      for (const [mod, allowed] of Object.entries(IMPORT_WHITELIST)) {
+        const re = new RegExp(`from\\s+['"](?:\\.\\./analysis/|\\./)?${mod}['"]`);
+        if (re.test(content) && !allowed.has(rel)) hits.push(`${rel}: imports ${mod}`);
+      }
+    }
+    expect(hits).toEqual([]);
+  });
 });
