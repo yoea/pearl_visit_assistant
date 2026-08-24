@@ -100,7 +100,7 @@ describe('隐私红线静态守卫', () => {
 
   it('网络/真实分析类只允许工厂与链路内部引用（UI 唯一入口）', () => {
     const IMPORT_WHITELIST: Record<string, Set<string>> = {
-      'analysis-client': new Set(['analysis/deepseek-provider.ts', 'analysis/provider-factory.ts']),
+      'analysis-client': new Set(['analysis/deepseek-provider.ts', 'analysis/provider-factory.ts', 'analysis/analysis-service.ts']),
       'deepseek-provider': new Set(['analysis/provider-factory.ts']),
     };
     const hits: string[] = [];

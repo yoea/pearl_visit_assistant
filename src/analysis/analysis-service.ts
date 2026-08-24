@@ -2,6 +2,9 @@ import { scanPayload, type SecurityFinding } from '../security/scanner';
 import type { AnalysisRequest } from '../types/student';
 import type { AnalysisProvider, AnalysisResult } from './provider';
 
+/** UI 分类错误用：经本模块汇聚导出（App 不直接依赖网络模块 analysis-client） */
+export { AnalysisClientError } from './analysis-client';
+
 export class SecurityViolationError extends Error {
   constructor(public readonly findings: ReadonlyArray<SecurityFinding>) {
     super('数据未通过发送前安全检查，已阻止发送，请返回检查数据。');
@@ -17,6 +20,11 @@ export class SecurityViolationError extends Error {
  */
 export class AnalysisService {
   constructor(private readonly provider: AnalysisProvider) {}
+
+  /** provider 身份（'mock' | 'deepseek'）：UI 据此显示模拟/真实徽标，绝不静默假装真实 AI */
+  get providerName(): string {
+    return this.provider.name;
+  }
 
   async analyze(request: AnalysisRequest, nameBlacklist: Set<string>): Promise<AnalysisResult> {
     const scan = scanPayload(request, nameBlacklist);
