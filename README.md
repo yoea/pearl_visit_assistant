@@ -29,7 +29,7 @@ npm test           # 运行全部测试
   npm audit 会提示已知公告；本工具只读取基金会工作人员自己的 Excel，风险可接受。
 - v1 为 Mock 分析（确定性规则引擎）；接入真实大模型时实现 `AnalysisProvider`
   接口并**必须经由 `AnalysisService` 发送**（安全硬闸自动生效），
-  API Key 由用户输入且绝不写入源码。
+  API Key 只配置在分析服务器端，前端绝不接触；模型配置由分析服务器决定。
 
 ## 第二阶段：真实 AI 分析（DeepSeek 经分析服务器中转）
 

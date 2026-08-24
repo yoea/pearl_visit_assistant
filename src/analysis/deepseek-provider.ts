@@ -14,10 +14,23 @@ function assertStudentMatch(request: AnalysisRequest, wire: WireAnalysisResponse
   const responseIds = wire.students.map((s) => s.studentId);
   if (
     responseIds.length !== request.students.length
+    || new Set(responseIds).size !== responseIds.length
     || responseIds.some((id) => !requestIds.has(id))
   ) {
     throw new AnalysisClientError('format');
   }
+}
+
+/** v4 UUID：randomUUID 仅安全上下文可用，内网 http 部署需手写回退 */
+function newRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
 }
 
 /**
@@ -38,7 +51,7 @@ export class DeepSeekAnalysisProvider implements AnalysisProvider {
       throw new SecurityViolationError(rescan.findings);
     }
 
-    const payload = createAnalysisPayload(request, crypto.randomUUID());
+    const payload = createAnalysisPayload(request, newRequestId());
 
     // 出站终扫③：对最终 wire 结构做规则 + 禁止字段名 + 结构守卫
     const outbound = scanOutboundPayload(payload);

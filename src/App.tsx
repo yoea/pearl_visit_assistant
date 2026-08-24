@@ -108,8 +108,13 @@ export default function App() {
           : e instanceof SecurityViolationError ? 'security'
             : 'unknown';
       usageStats.record('analysisFailed', { errorCategory: category });
-      // 错误文案：client 与安全检查错误的消息即分类文案，直显不包装
-      setAnalyzeError(e instanceof Error ? e.message : 'AI 分析失败');
+      // 错误文案：client 与安全检查错误的消息即分类文案，直显不包装；
+      // 其他异常（编程错误/环境异常）一律用固定文案，绝不泄漏原始错误细节
+      setAnalyzeError(
+        e instanceof AnalysisClientError || e instanceof SecurityViolationError
+          ? e.message
+          : 'AI 分析失败，请重试。',
+      );
     } finally {
       setAnalyzing(false);
     }

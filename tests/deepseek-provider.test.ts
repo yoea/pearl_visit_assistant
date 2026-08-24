@@ -110,6 +110,23 @@ describe('DeepSeekAnalysisProvider', () => {
     expect((err as Error).message).toContain('格式异常');
   });
 
+  it('响应含重复 studentId（请求 2 人、响应均为同一 id）→ format 错误（绝不静默丢学生）', async () => {
+    const two: AnalysisRequest = {
+      ...request,
+      students: [cleanStudent, { ...cleanStudent, anonymousId: 'student-002' }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      text: async () => JSON.stringify(wireResponse(['student-001', 'student-001'])),
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new DeepSeekAnalysisProvider(
+      new AnalysisClient({ apiUrl: 'https://example.org/api/analyze', timeoutMs: 30_000 }),
+    );
+    const err = await provider.analyze(two).catch((e: unknown) => e);
+    expect((err as Error).message).toContain('格式异常');
+  });
+
   it('响应顺序与请求不同（集合一致）→ 通过', async () => {
     const two: AnalysisRequest = {
       ...request,
