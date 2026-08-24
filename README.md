@@ -30,3 +30,26 @@ npm test           # 运行全部测试
 - v1 为 Mock 分析（确定性规则引擎）；接入真实大模型时实现 `AnalysisProvider`
   接口并**必须经由 `AnalysisService` 发送**（安全硬闸自动生效），
   API Key 由用户输入且绝不写入源码。
+
+## 第二阶段：真实 AI 分析（DeepSeek 经分析服务器中转）
+
+数据只在本地脱敏 + 三道安全检查通过后，才发送到**指定分析服务器**。协议契约、
+服务端提示词约束与实现须知见 `docs/superpowers/specs/2026-08-23-deepseek-integration-design.md`。
+
+### 环境变量（构建期注入，绝不含 API Key）
+
+| 变量 | 说明 | 默认 |
+|---|---|---|
+| `VITE_ANALYSIS_PROVIDER` | `mock`（本地规则引擎）或 `real`（真实 AI） | `mock` |
+| `VITE_ANALYSIS_API_URL` | 分析服务器完整端点（real 时必填） | 空 |
+| `VITE_ANALYSIS_TIMEOUT_MS` | 请求超时毫秒数 | `30000` |
+
+- **API Key 只配置在分析服务器端**，前端绝不保存任何 Key（浏览器环境变量会进入构建产物）。
+- `real` 但未配置地址时自动回退 Mock 并在控制台提示。
+- 可复制 `.env.example` 为 `.env` 按需修改（`.env*` 已被 gitignore，`.env.example` 除外）。
+
+### 发送前确认
+
+安全检查通过后必须手动点击「确认并开始 AI 分析」才会发送；发送前预览页列出
+「绝不发送」字段清单（姓名/证件/电话/住址/教师姓名/珍珠号/原始文件等）。
+AI 分析结果只存当前页面内存，刷新即失；报告需手动下载。
