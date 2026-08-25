@@ -1,4 +1,4 @@
-const STEPS = ['导入Excel', '字段映射', '本地脱敏', '匿名预览', '安全检查', 'AI分析报告'];
+const STEPS = ['导入Excel', '脱敏及检查', 'AI分析报告'];
 
 export default function Stepper({ current }: { current: number }) {
   return (

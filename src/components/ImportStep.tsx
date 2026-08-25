@@ -59,7 +59,7 @@ export default function ImportStep({
       <div className="mt-6 text-xs text-slate-500">
         <p className="font-medium">使用步骤</p>
         <ol className="mt-1 list-decimal pl-4 leading-6">
-          <li>导入Excel</li><li>本地脱敏</li><li>安全检查</li><li>AI分析</li><li>查看报告</li><li>下载报告</li>
+          <li>导入Excel</li><li>脱敏及检查（自动完成）</li><li>确认并开始 AI 分析</li><li>查看报告</li>
         </ol>
       </div>
     </Card>

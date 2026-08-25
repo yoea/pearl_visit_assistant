@@ -9,15 +9,11 @@ import { createAnalysisService } from './analysis/provider-factory';
 import { AnalysisClientError, SecurityViolationError } from './analysis/analysis-service';
 import { generateReport } from './report/generator';
 import { InMemoryUsageStats } from './stats/usage-stats';
-import type { RawStudentRecord } from './types/student';
+import type { MappedColumn, RawStudentRecord } from './types/student';
 import type { ParsedState, Stage } from './types/pipeline';
 import Stepper from './components/Stepper';
 import ImportStep from './components/ImportStep';
-import MappingStep from './components/MappingStep';
-import AnonymizeStep from './components/AnonymizeStep';
-import PreviewStep from './components/PreviewStep';
-import SecurityStep from './components/SecurityStep';
-import SendPreviewStep from './components/SendPreviewStep';
+import ProcessStep from './components/ProcessStep';
 import ReportStep from './components/ReportStep';
 
 const usageStats = new InMemoryUsageStats();
@@ -26,25 +22,36 @@ const analysisService = createAnalysisService();
 
 /** 阶段 → 步骤条序号（与 Stage 联合类型编译期锁定，漏配即报错） */
 const STAGE_TO_STEP: Record<Stage, number> = {
-  idle: 1, parsed: 2, anonymized: 3, scanned: 5, analyzed: 6,
+  idle: 1, parsed: 1, anonymized: 2, scanned: 2, analyzed: 3,
 };
 
 export default function App() {
   const [state, dispatch] = useReducer(pipelineReducer, { stage: 'idle' });
-  const [anonymizedView, setAnonymizedView] = useState<'stats' | 'preview'>('stats');
-  const [confirmView, setConfirmView] = useState(false);
   const [importError, setImportError] = useState<string | undefined>();
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | undefined>();
   const metaRef = useRef<{ schoolName: string; cohort: string }>({ schoolName: '', cohort: '' });
   const nameBlacklistRef = useRef<Set<string>>(new Set());
+  const mappingRef = useRef<MappedColumn[]>([]);
 
+  /**
+   * 导入即自动串联：解析 → 映射 → 脱敏 → 扫描，一次点击直达合并检查页（scanned）。
+   * 关键：全程局部变量驱动，禁用 state.stage 守卫——批处理下读旧值会丢事件导致白屏。
+   * 自动流转 ≠ 自动发送：AI 分析仍必须用户在检查页手动点击确认。
+   */
   const handleFile = useCallback(async (buffer: ArrayBuffer) => {
     setImportError(undefined);
+    setAnalyzeError(undefined);
+    let parsed;
     try {
-      const parsed = parseExcel(buffer);
+      parsed = parseExcel(buffer);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : '文件解析失败');
+      return;
+    }
+    try {
       const records: RawStudentRecord[] = parsed.rows.map((values, i) => ({
-        sourceRow: parsed.rowNumbers[i], // Task 4 保留的真实工作表行号（跳过空行后仍准确）
+        sourceRow: parsed.rowNumbers[i], // 保留真实工作表行号（跳过空行后仍准确）
         values,
       }));
       rawStore.setRecords(records);
@@ -60,29 +67,24 @@ export default function App() {
         mappedColumns: mapping.mappedColumns,
       };
       metaRef.current = { schoolName: parsedState.schoolName, cohort: parsedState.cohort };
+      mappingRef.current = mapping.mappedColumns;
       dispatch({ type: 'PARSE_SUCCEEDED', parsed: parsedState });
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : '文件解析失败');
+      // 姓名黑名单只提取一次（O(n)），脱敏/扫描/分析全程复用；
+      // 不能派生自 nameIndex：教师/审批人列可含多个姓名（按标点拆分），与学生全名集不同。
+      const blacklist = rawStore.collectNameBlacklist();
+      nameBlacklistRef.current = blacklist;
+      const output = anonymize(rawStore.snapshot(), mapping.mappedColumns, blacklist);
+      dispatch({ type: 'ANONYMIZE_SUCCEEDED', output });
+      // 扫描失败不是异常：仍 dispatch SCAN_SUCCEEDED，检查页显示红区并阻止发送
+      const scan = scanPayload({ meta: metaRef.current, students: output.students }, blacklist);
+      dispatch({ type: 'SCAN_SUCCEEDED', output, scan });
+    } catch {
+      // 意外异常兜底：固定文案 + 重置，绝不含技术错误细节
+      rawStore.clear();
+      setImportError('文件处理失败，请检查文件后重新导入。');
+      dispatch({ type: 'RESET' });
     }
   }, []);
-
-  const handleAnonymize = useCallback(() => {
-    if (state.stage !== 'parsed') return;
-    // 姓名黑名单只提取一次（O(n)），脱敏/扫描/分析全程复用；
-    // 不能派生自 nameIndex：教师/审批人列可含多个姓名（按标点拆分），与学生全名集不同。
-    nameBlacklistRef.current = rawStore.collectNameBlacklist();
-    const output = anonymize(rawStore.snapshot(), state.mappedColumns, nameBlacklistRef.current);
-    setAnonymizedView('stats');
-    dispatch({ type: 'ANONYMIZE_SUCCEEDED', output });
-  }, [state]);
-
-  const handleScan = useCallback(() => {
-    if (state.stage !== 'anonymized') return;
-    setConfirmView(false);
-    const request = { meta: metaRef.current, students: state.output.students };
-    const scan = scanPayload(request, nameBlacklistRef.current);
-    dispatch({ type: 'SCAN_SUCCEEDED', output: state.output, scan });
-  }, [state]);
 
   const handleAnalyze = useCallback(async () => {
     if (state.stage !== 'scanned' || !state.scan.passed || analyzing) return;
@@ -123,11 +125,10 @@ export default function App() {
   const handleReset = useCallback(() => {
     rawStore.clear();
     nameBlacklistRef.current = new Set();
+    mappingRef.current = [];
     metaRef.current = { schoolName: '', cohort: '' };
     setImportError(undefined);
     setAnalyzeError(undefined);
-    setAnonymizedView('stats');
-    setConfirmView(false);
     dispatch({ type: 'RESET' });
   }, []);
 
@@ -146,30 +147,17 @@ export default function App() {
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">
         {state.stage === 'idle' && <ImportStep onFile={handleFile} error={importError} />}
-        {state.stage === 'parsed' && <MappingStep state={state} onAnonymize={handleAnonymize} />}
-        {state.stage === 'anonymized' && anonymizedView === 'stats' && (
-          <AnonymizeStep output={state.output} onNext={() => setAnonymizedView('preview')} />
-        )}
-        {state.stage === 'anonymized' && anonymizedView === 'preview' && (
-          <PreviewStep output={state.output} onNext={handleScan} onBack={() => setAnonymizedView('stats')} />
-        )}
-        {state.stage === 'scanned' && !confirmView && (
-          <SecurityStep
+        {(state.stage === 'anonymized' || state.stage === 'scanned') && (
+          <ProcessStep
             output={state.output}
-            scan={state.scan}
-            onNext={() => setConfirmView(true)}
-            onReset={handleReset}
-          />
-        )}
-        {state.stage === 'scanned' && confirmView && (
-          <SendPreviewStep
-            output={state.output}
+            scan={'scan' in state ? state.scan : undefined}
+            mappedColumns={mappingRef.current}
             meta={metaRef.current}
             providerName={analysisService.providerName}
             analyzing={analyzing}
             error={analyzeError}
-            onBack={() => setConfirmView(false)}
-            onConfirm={() => void handleAnalyze()}
+            onAnalyze={() => void handleAnalyze()}
+            onReset={handleReset}
           />
         )}
         {state.stage === 'analyzed' && (
