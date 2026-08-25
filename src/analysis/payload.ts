@@ -29,7 +29,7 @@ export type WireStudentData = { [K in (typeof SENT_FIELDS)[number]]: AnonymizedS
 export interface WireAnalysisRequest {
   version: typeof PROTOCOL_VERSION;
   requestId: string;
-  school: { name: string };
+  school: { name: string; totalStudents: number };
   cohort: string;
   students: { id: string; data: WireStudentData }[];
 }
@@ -37,12 +37,15 @@ export interface WireAnalysisRequest {
 /**
  * 唯一出站构造点：AnalysisRequest → wire 请求。
  * 只拷贝 SENT_FIELDS 白名单字段；调用方必须先经过 AnalysisService 硬闸。
+ * totalStudents：全校申请总人数——分批模式下每批仍是全量数，学校级归纳按全校视角撰写。
  */
-export function createAnalysisPayload(request: AnalysisRequest, requestId: string): WireAnalysisRequest {
+export function createAnalysisPayload(
+  request: AnalysisRequest, requestId: string, totalStudents?: number,
+): WireAnalysisRequest {
   return {
     version: PROTOCOL_VERSION,
     requestId,
-    school: { name: request.meta.schoolName },
+    school: { name: request.meta.schoolName, totalStudents: totalStudents ?? request.students.length },
     cohort: request.meta.cohort,
     students: request.students.map((s) => ({
       id: s.anonymousId,
@@ -54,9 +57,13 @@ export function createAnalysisPayload(request: AnalysisRequest, requestId: strin
 /**
  * 出站终扫③：对最终 wire 结构做规则 + 禁止字段名 + 结构守卫。
  * school.name 豁免地址子句检测（与第一阶段 schoolName 豁免语义一致），其余规则照常。
+ * requestId 为系统生成的随机 UUID（非用户数据），完全豁免规则扫描——避免偶发命中手机号/固话数字模式误拦。
  */
 export function scanOutboundPayload(payload: WireAnalysisRequest): SecurityScanResult {
-  return scanPayload(payload, new Set(), { exemptAddressPaths: ['school.name'] });
+  return scanPayload(payload, new Set(), {
+    exemptAddressPaths: ['school.name'],
+    exemptRulePaths: ['requestId'],
+  });
 }
 
 // ── 响应契约（zod）──────────────────────────────────────────────

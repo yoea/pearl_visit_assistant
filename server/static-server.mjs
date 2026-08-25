@@ -52,7 +52,11 @@ function serveStatic(req, res) {
   try {
     const content = readFileSync(file);
     const type = MIME[extname(file)] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': type });
+    res.writeHead(200, {
+      'Content-Type': type,
+      // html 不缓存：构建产物更新后用户刷新即拿到新版
+      ...(type.startsWith('text/html') ? { 'Cache-Control': 'no-cache' } : {}),
+    });
     res.end(content);
   } catch {
     res.writeHead(404);

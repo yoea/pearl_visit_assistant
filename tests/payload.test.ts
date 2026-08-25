@@ -37,7 +37,7 @@ describe('createAnalysisPayload', () => {
     const p = createAnalysisPayload(request, 'req-1');
     expect(p.version).toBe(PROTOCOL_VERSION);
     expect(p.requestId).toBe('req-1');
-    expect(p.school).toEqual({ name: '某中学' });
+    expect(p.school).toEqual({ name: '某中学', totalStudents: 1 });
     expect(p.cohort).toBe('2026级');
     expect(p.students).toHaveLength(1);
     expect(p.students[0].id).toBe('student-001');
@@ -85,6 +85,12 @@ describe('scanOutboundPayload', () => {
     const bad = { ...cleanStudent, housingStatus: '电话13800138000' };
     const r = scanOutboundPayload(createAnalysisPayload({ ...request, students: [bad] }, 'req-1'));
     expect(r.passed).toBe(false);
+  });
+
+  it('requestId 系统生成字段豁免规则扫描（随机 UUID 偶发含手机号样数字片段不误拦）', () => {
+    // 回归：UUID 十六进制串偶发出现「1[3-9]xxxxxxxxx」样式 → 曾误报手机号拦截干净数据
+    const r = scanOutboundPayload(createAnalysisPayload(request, '13800000000'));
+    expect(r.passed).toBe(true);
   });
 });
 

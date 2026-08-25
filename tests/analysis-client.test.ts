@@ -73,8 +73,9 @@ describe('AnalysisClient', () => {
     expect(init.headers.Authorization).toBe('Bearer sk-test-123');
     expect(init.headers['Content-Type']).toBe('application/json');
     const body = JSON.parse(init.body);
-    expect(body.model).toBe('deepseek-chat');
+    expect(body.model).toBe('deepseek-v4-flash');
     expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body.thinking).toEqual({ type: 'disabled' }); // 推理模型：显式关闭思维链，防 max_tokens 被推理耗尽
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[0].content).toContain('不是资格审批器');
     expect(JSON.parse(body.messages[1].content).requestId).toBe('req-1');

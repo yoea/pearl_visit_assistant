@@ -88,7 +88,7 @@ describe('DeepSeekAnalysisProvider', () => {
     const wire = JSON.parse(body.messages[1].content);
     expect(wire.version).toBe('1.0');
     expect(wire.requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-    expect(wire.school).toEqual({ name: '某中学' });
+    expect(wire.school).toEqual({ name: '某中学', totalStudents: 1 });
     expect(wire.students[0].id).toBe('student-001');
     expect(JSON.stringify(wire)).not.toContain('姓名');
     expect(JSON.stringify(wire)).not.toContain('13800138000');
@@ -149,6 +149,65 @@ describe('DeepSeekAnalysisProvider', () => {
       students: [{ ...cleanStudent, 姓名: '张三' } as AnonymizedStudent],
     };
     await expect(provider.analyze(bad)).rejects.toBeInstanceOf(SecurityViolationError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('超过 10 人自动分批：25 人 → 3 批，合并顺序与分块正确，schoolAnalysis 取首批', async () => {
+    const students25 = Array.from({ length: 25 }, (_, i) => ({
+      ...cleanStudent, anonymousId: `student-${String(i + 1).padStart(3, '0')}`,
+    }));
+    const request25: AnalysisRequest = { meta: request.meta, students: students25 };
+
+    // 动态回显：解析请求中的学生 id，返回对应学生的合法响应
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body);
+      const wire = JSON.parse(body.messages[1].content);
+      const ids = wire.students.map((s: { id: string }) => s.id);
+      return Promise.resolve(deepseekResponse(JSON.stringify(wireResponse(ids))));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new DeepSeekAnalysisProvider(
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
+    );
+
+    const result = await provider.analyze(request25);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.students).toHaveLength(25);
+    // 合并顺序保持原顺序
+    expect(result.students.map((s) => s.studentId)).toEqual(students25.map((s) => s.anonymousId));
+
+    // 分块正确：批 1 = 前 10，批 2 = 中 10，批 3 = 后 5
+    const batchIds = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse(JSON.parse((init as { body: string }).body).messages[1].content)
+        .students.map((s: { id: string }) => s.id));
+    expect(batchIds[0]).toEqual(students25.slice(0, 10).map((s) => s.anonymousId));
+    expect(batchIds[1]).toEqual(students25.slice(10, 20).map((s) => s.anonymousId));
+    expect(batchIds[2]).toEqual(students25.slice(20).map((s) => s.anonymousId));
+
+    // 每批都携带全校总数（学校级归纳按全校视角）
+    const batchTotals = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse(JSON.parse((init as { body: string }).body).messages[1].content).school.totalStudents);
+    expect(batchTotals).toEqual([25, 25, 25]);
+
+    // schoolAnalysis 取首批
+    expect(result.schoolAnalysis.studentCount).toBe(1);
+  });
+
+  it('分批中任一批安全扫描失败 → 整体失败（绝不部分发送后假装成功）', async () => {
+    const students15 = Array.from({ length: 15 }, (_, i) => ({
+      ...cleanStudent, anonymousId: `student-${String(i + 1).padStart(3, '0')}`,
+    }));
+    // 第 12 名学生携带伪造身份证（在第 2 批内）
+    students15[11] = { ...students15[11], familySituation: '证件110101200001011234' };
+    const request15: AnalysisRequest = { meta: request.meta, students: students15 };
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new DeepSeekAnalysisProvider(
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
+    );
+    await expect(provider.analyze(request15)).rejects.toBeInstanceOf(SecurityViolationError);
+    // 重扫②在分块前整体拦截，零网络
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

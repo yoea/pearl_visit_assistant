@@ -17,6 +17,7 @@ export const DEEPSEEK_SYSTEM_PROMPT = `你是「珍珠生走访」项目的面�
 4. 输出格式：严格 JSON（结构见下方 schema），不得输出 markdown 围栏以外的任何内容；简体中文。
 5. 逐生分析：students 必须与请求一一对应，studentId 原样回显；学校级归纳不得包含任何学生姓名。
 6. null 字段：表示材料未提供，不得臆测填值；可列入 dataQualityIssues 或 informationToVerify。
+7. 学校级归纳按全校视角撰写：schoolAnalysis.studentCount 必须等于请求中 school.totalStudents（全校申请总人数，可能大于本请求 students 数量）；overview 等学校级内容不得写成「本校共 N 名学生」中的 N 等于本请求批内人数。
 
 输出 schema（严格遵循，不要多余字段）：
 {

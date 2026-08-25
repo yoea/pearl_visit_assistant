@@ -33,9 +33,12 @@ function walk(
   isStructuredRegion: boolean,
   isSchoolName: boolean,
   exemptAddressPaths: readonly string[],
+  exemptRulePaths: readonly string[],
   findings: SecurityFinding[],
 ): void {
   if (node == null) return;
+  // 系统生成字段（如 wire 请求的 requestId）：完全豁免规则扫描——随机 UUID 偶发命中手机号/固话数字模式，不属用户数据
+  if (exemptRulePaths.includes(path)) return;
   if (typeof node === 'string') {
     for (const rule of RULES) {
       rule.pattern.lastIndex = 0;
@@ -88,7 +91,7 @@ function walk(
     return;
   }
   if (Array.isArray(node)) {
-    node.forEach((item, i) => walk(item, `${path}[${i}]`, false, false, exemptAddressPaths, findings));
+    node.forEach((item, i) => walk(item, `${path}[${i}]`, false, false, exemptAddressPaths, exemptRulePaths, findings));
     return;
   }
   if (typeof node === 'object') {
@@ -99,6 +102,7 @@ function walk(
         STRUCTURED_REGION_KEYS.has(k),
         k === 'schoolName',
         exemptAddressPaths,
+        exemptRulePaths,
         findings,
       );
     }
@@ -110,6 +114,10 @@ export interface ScanOptions {
    *  只豁免地址子句，其余规则（证件/电话/姓名模式/字段名）照常扫描。
    *  路径写法与 SecurityFinding.field 一致（相对根对象、点分隔、数组下标 [i]），精确匹配。 */
   exemptAddressPaths?: readonly string[];
+  /** 完全豁免规则扫描的字段路径（系统生成字段，如 wire 请求的 requestId）。
+   *  与 exemptAddressPaths 不同：本项跳过全部规则（含证件/电话/姓名模式）。
+   *  只用于非用户数据的系统字段；用户数据字段不得加入。 */
+  exemptRulePaths?: readonly string[];
 }
 
 /**
@@ -131,6 +139,7 @@ export function scanPayload(
 
   const findings: SecurityFinding[] = [];
   const exemptAddressPaths = options.exemptAddressPaths ?? [];
+  const exemptRulePaths = options.exemptRulePaths ?? [];
 
   // 1. 姓名黑名单：全 payload 精确匹配
   let json: string;
@@ -156,7 +165,7 @@ export function scanPayload(
   }
 
   // 2. 字段值规则扫描
-  walk(payload, '', false, false, exemptAddressPaths, findings);
+  walk(payload, '', false, false, exemptAddressPaths, exemptRulePaths, findings);
 
   // 3. 禁止字段名检查
   const keys = [...Object.keys(payload)];

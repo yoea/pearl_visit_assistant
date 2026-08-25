@@ -37,7 +37,11 @@ export function createAnalysisService(config: AnalysisServiceConfig = {}): Analy
         : import.meta.env.VITE_ANALYSIS_TIMEOUT_MS,
     );
     return new AnalysisService(
-      new DeepSeekAnalysisProvider(new AnalysisClient({ apiKey, timeoutMs })),
+      new DeepSeekAnalysisProvider(new AnalysisClient({
+        apiKey,
+        timeoutMs,
+        model: import.meta.env.VITE_DEEPSEEK_MODEL || undefined,
+      })),
     );
   }
   return new AnalysisService(new MockAnalysisProvider());

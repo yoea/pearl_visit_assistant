@@ -8,6 +8,26 @@ import {
 import type { AnalysisProvider, AnalysisResult } from './provider';
 import type { AnalysisRequest } from '../types/student';
 
+/** 分批参数：单批学生数（输出 8000 token 上限内的安全余量）与并行请求数 */
+const CHUNK_SIZE = 10;
+const MAX_CONCURRENCY = 5;
+
+/** 有限并发映射：保持结果顺序与输入一致 */
+async function mapWithConcurrency<T, R>(
+  items: T[], limit: number, fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 /** 响应学生集合必须与请求一一对应（顺序不限），否则按格式错误处理（绝不静默丢学生） */
 function assertStudentMatch(request: AnalysisRequest, wire: WireAnalysisResponse): void {
   const requestIds = new Set(request.students.map((s) => s.anonymousId));
@@ -37,6 +57,8 @@ function newRequestId(): string {
  * DeepSeek 分析提供者（直连 DeepSeek；Key 由 AnalysisClient 持有——局域网部署形态，用户明确授权）。
  * 安全链：重扫②（不信任调用方）→ createAnalysisPayload（唯一出站构造点）→ 出站终扫③ → fetch。
  * 任何一步失败即抛 SecurityViolationError / AnalysisClientError，绝不发送。
+ * 大批量策略：学生按 CHUNK_SIZE 分批并行请求（避免 8000 token 输出截断），
+ * 全部成功后汇总——students 按批序合并、schoolAnalysis 取首批、整体 id 一一对应校验。
  * 本类与 AnalysisClient 不公共导出：仅 provider-factory 内部构造。
  */
 export class DeepSeekAnalysisProvider implements AnalysisProvider {
@@ -51,15 +73,29 @@ export class DeepSeekAnalysisProvider implements AnalysisProvider {
       throw new SecurityViolationError(rescan.findings);
     }
 
-    const payload = createAnalysisPayload(request, newRequestId());
-
-    // 出站终扫③：对最终 wire 结构做规则 + 禁止字段名 + 结构守卫
-    const outbound = scanOutboundPayload(payload);
-    if (!outbound.passed) {
-      throw new SecurityViolationError(outbound.findings);
+    // 分块（≤ CHUNK_SIZE 时单批，行为与不分批一致）
+    const chunks: AnalysisRequest[] = [];
+    for (let i = 0; i < request.students.length; i += CHUNK_SIZE) {
+      chunks.push({ meta: request.meta, students: request.students.slice(i, i + CHUNK_SIZE) });
     }
 
-    const wire = await this.client.analyze(payload);
+    const results = await mapWithConcurrency(chunks, MAX_CONCURRENCY, async (chunk) => {
+      const payload = createAnalysisPayload(chunk, newRequestId(), request.students.length);
+
+      // 出站终扫③：对每批最终 wire 结构做规则 + 禁止字段名 + 结构守卫
+      const outbound = scanOutboundPayload(payload);
+      if (!outbound.passed) {
+        throw new SecurityViolationError(outbound.findings);
+      }
+
+      return this.client.analyze(payload);
+    });
+
+    // 汇总：students 按批序合并；schoolAnalysis 取首批（基于首批学生视角的学校级归纳）
+    const wire: WireAnalysisResponse = {
+      ...results[0],
+      students: results.flatMap((r) => r.students),
+    };
     assertStudentMatch(request, wire);
     // wire 响应经 zod 校验后形状与领域结构一致（契约同构），直接作为分析结果
     return wire;

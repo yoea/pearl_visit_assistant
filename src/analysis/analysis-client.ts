@@ -33,7 +33,7 @@ export interface AnalysisClientConfig {
 }
 
 export const DEFAULT_TIMEOUT_MS = 60_000;
-export const DEFAULT_MODEL = 'deepseek-chat';
+export const DEFAULT_MODEL = 'deepseek-v4-flash';
 export const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 
 interface ChatMessage {
@@ -101,6 +101,9 @@ export class AnalysisClient {
           temperature: 0.3, // 走访分析：低随机度保证可追溯、不跑题
           max_tokens: 8000,
           response_format: { type: 'json_object' },
+          // deepseek-v4-flash 为推理模型：默认思维链会耗尽 max_tokens 使 content 为空/截断
+          // （实测 reasoning≈7-8k 时 content=0 字符 → finish=length）。显式关闭推理。
+          thinking: { type: 'disabled' },
         }),
         signal: controller.signal,
       });
