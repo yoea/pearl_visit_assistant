@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateReport } from '../src/report/generator';
 import { reportToMarkdown } from '../src/report/markdown';
+import { reportToHtml, escapeHtml } from '../src/report/html';
 import { MockAnalysisProvider } from '../src/analysis/mock-provider';
 import type { AnonymizedStudent, AnalysisRequest } from '../src/types/student';
 import type { Report } from '../src/report/types';
@@ -140,5 +141,27 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     const md = reportToMarkdown(generateReport(result, meta, now, [adversarial]));
     expect(md).toContain('特别困难 # 假标题：1人');
     expect(md).not.toMatch(/^# 假标题/m);
+  });
+
+  it('HTML 为完全自包含单文件（含姓名、图表，无外部资源引用）', async () => {
+    const result = await new MockAnalysisProvider().analyze({
+      meta, students: [sampleStudent],
+    } satisfies AnalysisRequest);
+    const html = reportToHtml(
+      generateReport(result, meta, now, [sampleStudent]),
+      new Map([['student-001', '测试甲']]),
+    );
+    expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(html).toContain('测试甲（student-001）');
+    expect(html).toContain('走访参考报告');
+    expect(html).toContain('困难类型分布');
+    expect(html).not.toMatch(/https?:\/\//); // 零外部依赖（无 CDN/图片/脚本外链）
+    expect(html).not.toContain('建议通过');
+    expect(html).not.toContain('建议淘汰');
+  });
+
+  it('escapeHtml 转义动态文本（防止内容破坏 HTML 结构）', () => {
+    expect(escapeHtml('<script>alert(1)</script>')).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(escapeHtml('a"b&c')).toBe('a&quot;b&amp;c');
   });
 });

@@ -3,6 +3,7 @@ import type { Report } from '../report/types';
 import type { StudentAnalysis } from '../analysis/provider';
 import type { AnonymizedStudent } from '../types/student';
 import { reportToMarkdown } from '../report/markdown';
+import { reportToHtml } from '../report/html';
 import { downloadTextFile } from '../utils/download';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import Card from './ui/Card';
@@ -10,6 +11,27 @@ import Button from './ui/Button';
 import Badge from './ui/Badge';
 
 const IMPORTANCE_TONE: Record<string, string> = { high: 'amber', medium: 'blue', low: 'slate' };
+
+/** 轻量 CSS 条形图（无外部图表依赖，自包含） */
+function MiniBarChart({ items, color }: { items: { label: string; count: number }[]; color: string }) {
+  const max = Math.max(1, ...items.map((i) => i.count));
+  return (
+    <div className="space-y-1.5">
+      {items.map((i) => (
+        <div key={i.label} className="flex items-center gap-2 text-xs">
+          <span className="w-14 shrink-0 text-right text-slate-500">{i.label}</span>
+          <div className="h-4 flex-1 overflow-hidden rounded-full bg-slate-200/70">
+            <div
+              className={`h-4 rounded-full ${color}`}
+              style={{ width: `${((i.count / max) * 100).toFixed(1)}%` }}
+            />
+          </div>
+          <span className="w-12 shrink-0 text-slate-600">{i.count} 人</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** 本地学生数据 → 基本信息行（null/空串过滤，anonymousId 不展示） */
 function basicInfoOf(s: AnonymizedStudent): [string, string][] {
@@ -30,24 +52,31 @@ function StudentSection({ g, local }: {
   const basics = local ? basicInfoOf(local) : [];
   return (
     <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
+      {g.mainDifficultyFactors.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {g.mainDifficultyFactors.map((f) => (
+            <Badge key={f.factor} tone={IMPORTANCE_TONE[f.importance]}>{f.factor} · {f.importance}</Badge>
+          ))}
+        </div>
+      )}
       {basics.length > 0 && (
         <section>
-          <h4 className="font-medium text-slate-700">基本情况</h4>
+          <h4 className="border-l-4 border-slate-300 pl-2 font-medium text-slate-700">基本情况</h4>
           <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
             {basics.map(([label, value]) => <li key={label}>· {label}：{value}</li>)}
           </ul>
         </section>
       )}
       <section>
-        <h4 className="font-medium text-slate-700">材料要点摘要</h4>
+        <h4 className="border-l-4 border-blue-300 pl-2 font-medium text-slate-700">材料要点摘要</h4>
         <p className="mt-1 text-xs text-slate-600">{g.summary}</p>
       </section>
       <section>
-        <h4 className="font-medium text-slate-700">家庭情况概括</h4>
+        <h4 className="border-l-4 border-emerald-300 pl-2 font-medium text-slate-700">家庭情况概括</h4>
         <p className="mt-1 text-xs text-slate-600">{g.familySituation}</p>
       </section>
       <section>
-        <h4 className="font-medium text-slate-700">主要困难因素</h4>
+        <h4 className="border-l-4 border-amber-300 pl-2 font-medium text-slate-700">主要困难因素</h4>
         {g.mainDifficultyFactors.length > 0 ? (
           <ul className="mt-1 space-y-1 text-xs text-slate-600">
             {g.mainDifficultyFactors.map((f) => (
@@ -64,21 +93,21 @@ function StudentSection({ g, local }: {
       </section>
       {g.informationToVerify.length > 0 && (
         <section>
-          <h4 className="font-medium text-amber-700">需要重点核实</h4>
+          <h4 className="border-l-4 border-amber-400 pl-2 font-medium text-amber-700">需要重点核实</h4>
           <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
             {g.informationToVerify.map((v) => <li key={v}>· {v}</li>)}
           </ul>
         </section>
       )}
       <section>
-        <h4 className="font-medium text-slate-700">推荐面谈问题</h4>
+        <h4 className="border-l-4 border-violet-300 pl-2 font-medium text-slate-700">推荐面谈问题</h4>
         <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-slate-600">
           {g.interviewQuestions.map((q) => <li key={q}>{q}</li>)}
         </ol>
       </section>
       {g.interviewNotes.length > 0 && (
         <section>
-          <h4 className="font-medium text-amber-700">面谈注意事项</h4>
+          <h4 className="border-l-4 border-amber-400 pl-2 font-medium text-amber-700">面谈注意事项</h4>
           <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
             {g.interviewNotes.map((c) => <li key={c}>· {c}</li>)}
           </ul>
@@ -120,7 +149,34 @@ export default function ReportStep({
     downloadTextFile(`走访参考报告-${report.schoolName}-${date}.md`, md, 'text/markdown;charset=utf-8');
   };
 
+  const downloadHtml = () => {
+    const html = reportToHtml(report, nameIndex);
+    const date = report.generatedAt.slice(0, 10);
+    downloadTextFile(`走访参考报告-${report.schoolName}-${date}.html`, html, 'text/html;charset=utf-8');
+  };
+
   const sa = report.schoolAnalysis;
+
+  // 图表数据（来自本地脱敏数据与 AI 因素结果，非任何外部请求）
+  const levelChart = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of report.studentsData) {
+      const lv = s.difficultyLevel;
+      if (lv == null || lv === '') continue;
+      counts.set(lv, (counts.get(lv) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => ({ label, count }));
+  }, [report.studentsData]);
+
+  const factorChart = useMemo(() => {
+    const counts: Record<string, number> = { high: 0, medium: 0, low: 0 };
+    for (const g of report.students) {
+      for (const f of g.mainDifficultyFactors) counts[f.importance] = (counts[f.importance] ?? 0) + 1;
+    }
+    return ([['high', '高'], ['medium', '中'], ['low', '低']] as const)
+      .map(([key, label]) => ({ label, count: counts[key] ?? 0 }))
+      .filter((i) => i.count > 0);
+  }, [report.students]);
 
   return (
     <div className="space-y-4">
@@ -140,8 +196,9 @@ export default function ReportStep({
             </h2>
             <p className="mt-1 text-xs text-slate-500">生成时间：{report.generatedAt} · 仅存于当前页面内存</p>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={download}>下载走访参考报告（Markdown）</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={download}>下载 Markdown</Button>
+            <Button onClick={downloadHtml}>下载单文件 HTML</Button>
             <Button variant="secondary" onClick={onReset}>重新开始</Button>
           </div>
         </div>
@@ -190,39 +247,55 @@ export default function ReportStep({
       <Card>
         <h3 className="text-base font-semibold text-slate-800">一、学校整体情况</h3>
         <p className="mt-2 text-sm text-slate-700">{sa.overview}</p>
+        {(levelChart.length > 0 || factorChart.length > 0) && (
+          <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg bg-slate-50 p-4 sm:grid-cols-2">
+            {levelChart.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-slate-500">困难类型分布</p>
+                <div className="mt-2"><MiniBarChart items={levelChart} color="bg-emerald-500" /></div>
+              </div>
+            )}
+            {factorChart.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-slate-500">困难因素重要性分布</p>
+                <div className="mt-2"><MiniBarChart items={factorChart} color="bg-amber-400" /></div>
+              </div>
+            )}
+          </div>
+        )}
         {sa.difficultyPatterns.length > 0 && (
           <div className="mt-3">
-            <p className="text-xs font-medium text-slate-500">困难类型分布</p>
+            <p className="text-xs font-medium text-slate-500">AI 归纳的困难类型</p>
             <div className="mt-1 flex flex-wrap gap-1.5">
               {sa.difficultyPatterns.map((p) => <Badge key={p} tone="slate">{p}</Badge>)}
             </div>
           </div>
         )}
-        <section className="mt-3">
-          <h4 className="text-sm font-medium text-slate-700">共性问题</h4>
-          <ul className="mt-1 space-y-0.5 text-sm text-slate-600">
+        <section className="mt-4">
+          <h4 className="border-l-4 border-slate-400 pl-2 text-sm font-medium text-slate-700">共性问题</h4>
+          <ul className="mt-1.5 space-y-0.5 text-sm text-slate-600">
             {sa.commonIssues.map((i) => <li key={i}>· {i}</li>)}
             {sa.commonIssues.length === 0 && <li className="text-xs text-slate-400">暂无。</li>}
           </ul>
         </section>
         {sa.dataQualityIssues.length > 0 && (
           <section className="mt-3 rounded bg-amber-50 p-3">
-            <h4 className="text-sm font-medium text-amber-800">材料质量提示</h4>
-            <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
+            <h4 className="border-l-4 border-amber-400 pl-2 text-sm font-medium text-amber-800">材料质量提示</h4>
+            <ul className="mt-1.5 space-y-0.5 text-xs text-amber-700">
               {sa.dataQualityIssues.map((i) => <li key={i}>· {i}</li>)}
             </ul>
           </section>
         )}
-        <section className="mt-3">
-          <h4 className="text-sm font-medium text-slate-700">重点核实主题</h4>
-          <div className="mt-1 flex flex-wrap gap-1.5">
+        <section className="mt-4">
+          <h4 className="border-l-4 border-blue-400 pl-2 text-sm font-medium text-slate-700">重点核实主题</h4>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
             {sa.keyVerificationTopics.map((t) => <Badge key={t} tone="blue">{t}</Badge>)}
             {sa.keyVerificationTopics.length === 0 && <span className="text-xs text-slate-400">暂无。</span>}
           </div>
         </section>
-        <section className="mt-3">
-          <h4 className="text-sm font-medium text-slate-700">整体面谈建议</h4>
-          <ul className="mt-1 space-y-0.5 text-sm text-slate-600">
+        <section className="mt-4">
+          <h4 className="border-l-4 border-emerald-400 pl-2 text-sm font-medium text-slate-700">整体面谈建议</h4>
+          <ul className="mt-1.5 space-y-0.5 text-sm text-slate-600">
             {sa.interviewSuggestions.map((s) => <li key={s}>· {s}</li>)}
             {sa.interviewSuggestions.length === 0 && <li className="text-xs text-slate-400">暂无。</li>}
           </ul>

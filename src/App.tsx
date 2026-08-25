@@ -15,6 +15,7 @@ import Stepper from './components/Stepper';
 import ImportStep from './components/ImportStep';
 import ProcessStep from './components/ProcessStep';
 import ReportStep from './components/ReportStep';
+import HelpPage from './components/HelpPage';
 
 const usageStats = new InMemoryUsageStats();
 // provider 种类由环境变量决定（mock 默认 / real），网络 provider 仅工厂内部构造
@@ -27,6 +28,8 @@ const STAGE_TO_STEP: Record<Stage, number> = {
 
 export default function App() {
   const [state, dispatch] = useReducer(pipelineReducer, { stage: 'idle' });
+  // 帮助页视图：仅切换显示层，不影响流水线状态（帮助页返回后原进度原样保留）
+  const [showHelp, setShowHelp] = useState(false);
   const [importError, setImportError] = useState<string | undefined>();
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | undefined>();
@@ -136,9 +139,17 @@ export default function App() {
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-5xl px-4 py-4">
-          <div className="flex items-center gap-2">
-            <span className="rounded bg-emerald-700 px-2 py-0.5 text-xs font-medium text-white">隐私优先</span>
-            <p className="text-xs text-slate-500">原始学生信息仅在本地浏览器处理，不存储、不上传。</p>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-lg font-semibold text-slate-800">珍珠生走访智能面谈辅助工具</h1>
+            <button
+              type="button"
+              onClick={() => setShowHelp(!showHelp)}
+              title={showHelp ? '返回工具' : '帮助'}
+              aria-label={showHelp ? '返回工具' : '帮助'}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 text-sm text-slate-400 hover:border-emerald-300 hover:text-emerald-700"
+            >
+              {showHelp ? '←' : '?'}
+            </button>
           </div>
           <div className="mt-3">
             <Stepper current={STAGE_TO_STEP[state.stage]} />
@@ -146,8 +157,9 @@ export default function App() {
         </div>
       </header>
       <main className={`mx-auto max-w-5xl px-4 py-6 ${state.stage === 'analyzed' ? 'rounded-xl bg-emerald-50/60' : ''}`}>
-        {state.stage === 'idle' && <ImportStep onFile={handleFile} error={importError} />}
-        {(state.stage === 'anonymized' || state.stage === 'scanned') && (
+        {showHelp && <HelpPage onBack={() => setShowHelp(false)} />}
+        {!showHelp && state.stage === 'idle' && <ImportStep onFile={handleFile} error={importError} />}
+        {!showHelp && (state.stage === 'anonymized' || state.stage === 'scanned') && (
           <ProcessStep
             output={state.output}
             scan={'scan' in state ? state.scan : undefined}
@@ -160,7 +172,7 @@ export default function App() {
             onReset={handleReset}
           />
         )}
-        {state.stage === 'analyzed' && (
+        {!showHelp && state.stage === 'analyzed' && (
           <ReportStep report={state.report} nameIndex={state.output.nameIndex} onReset={handleReset} />
         )}
       </main>

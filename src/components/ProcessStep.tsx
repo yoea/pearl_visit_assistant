@@ -86,8 +86,9 @@ export default function ProcessStep({
   }, [analyzing]);
 
   return (
-    <div className={`space-y-4 ${analyzing ? 'pointer-events-none opacity-60' : ''}`}>
-      {/* 置顶操作区：检查结论 + 发送确认，按钮在首屏随手可点 */}
+    <div className="space-y-4">
+      {/* 置顶操作区：检查结论 + 发送确认，按钮在首屏随手可点。
+          分析中仅确认按钮替换为动画反馈，下方统计/映射/预览卡片仍可自由查看。 */}
       <Card>
         <h2 className="text-lg font-semibold text-slate-800">发送前检查与确认</h2>
         <p className="mt-1 text-sm text-slate-500">
