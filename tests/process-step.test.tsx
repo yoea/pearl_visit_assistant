@@ -47,9 +47,9 @@ describe('ProcessStep（脱敏及检查合并页，安全红线）', () => {
 
   it('扫描通过 → 绿色摘要 + 发送区渲染（确认按钮是唯一分析入口）', () => {
     renderStep();
-    expect(screen.getByText('✓ 未发现禁止发送的个人身份信息')).toBeTruthy();
+    expect(screen.getByText('✓ 未发现禁止发送的个人身份信息，可以开始分析')).toBeTruthy();
     expect(screen.getByText('确认并开始 AI 分析')).toBeTruthy();
-    expect(screen.getByText('确认发送（发送前最终确认）')).toBeTruthy();
+    expect(screen.getByText('发送前检查与确认')).toBeTruthy();
   });
 
   it('点击确认 → 恰好一次 onAnalyze（绝不重复触发）', () => {
@@ -59,12 +59,13 @@ describe('ProcessStep（脱敏及检查合并页，安全红线）', () => {
     expect(onAnalyze).toHaveBeenCalledTimes(1);
   });
 
-  it('analyzing 时按钮禁用且展示进行中文案', () => {
+  it('analyzing 时确认按钮替换为进行中反馈，重新开始禁用（不会重复触发）', () => {
     const onAnalyze = vi.fn();
     renderStep({ analyzing: true, onAnalyze });
-    const confirm = screen.getByText('AI 分析中，请勿关闭页面…') as HTMLButtonElement;
-    expect(confirm.disabled).toBe(true);
-    fireEvent.click(confirm);
+    expect(screen.queryByText('确认并开始 AI 分析')).toBeNull();
+    const reset = screen.getByText('重新开始') as HTMLButtonElement;
+    expect(reset.disabled).toBe(true);
+    fireEvent.click(reset);
     expect(onAnalyze).not.toHaveBeenCalled();
   });
 
@@ -83,12 +84,24 @@ describe('ProcessStep（脱敏及检查合并页，安全红线）', () => {
     expect(screen.getByText('分析请求超时，请稍后重试。')).toBeTruthy();
   });
 
-  it('绝不发送清单渲染', () => {
+  it('绝不发送清单默认收起，展开后渲染（避免顶部长卡把按钮推远）', () => {
     renderStep();
     expect(screen.getByText('以下内容绝不会发送')).toBeTruthy();
+    fireEvent.click(screen.getByText('查看绝不发送清单'));
     expect(screen.getByText('学生姓名')).toBeTruthy();
-    expect(screen.getAllByText('珍珠号').length).toBeGreaterThanOrEqual(1); // 检查清单与绝不发送清单均含
+    expect(screen.getAllByText('珍珠号').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('原始 Excel 文件本身')).toBeTruthy();
+  });
+
+  it('analyzing 时显示明显进行中反馈（动画 + 预估时间 + 已等待秒数）', () => {
+    const onAnalyze = vi.fn();
+    renderStep({ analyzing: true, onAnalyze });
+    expect(screen.getByText(/AI 正在分析/)).toBeTruthy();
+    expect(screen.getByText(/预计 \d+(-\d+)?/)).toBeTruthy();
+    expect(screen.getByText(/已等待 \d+ 秒/)).toBeTruthy();
+    const confirm = screen.getByText('AI 正在分析 0 名学生，请勿关闭页面…');
+    expect(confirm).toBeTruthy();
+    expect(onAnalyze).not.toHaveBeenCalled();
   });
 
   it('扫描失败 → 红色详情 + 发送区不渲染 + 重新开始触发 onReset', () => {

@@ -124,6 +124,14 @@ export default function ReportStep({
 
   return (
     <div className="space-y-4">
+      {/* 分析完成横幅：与检查页明显区分，让用户一眼知道分析已结束 */}
+      <div className="flex items-center gap-3 rounded-lg bg-emerald-600 px-4 py-3 text-white shadow">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20 text-base" aria-hidden="true">✓</span>
+        <div>
+          <p className="text-sm font-semibold">AI 分析已完成</p>
+          <p className="mt-0.5 text-xs text-emerald-100">以下报告基于脱敏材料生成，仅供走访参考，不构成任何资助结论。</p>
+        </div>
+      </div>
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

@@ -145,7 +145,7 @@ export default function App() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      <main className={`mx-auto max-w-5xl px-4 py-6 ${state.stage === 'analyzed' ? 'rounded-xl bg-emerald-50/60' : ''}`}>
         {state.stage === 'idle' && <ImportStep onFile={handleFile} error={importError} />}
         {(state.stage === 'anonymized' || state.stage === 'scanned') && (
           <ProcessStep

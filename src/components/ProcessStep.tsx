@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SecurityScanResult } from '../security/scanner';
 import type { AnonymizationOutput, AnonymizedStudent, MappedColumn } from '../types/student';
 import { ACTION_LABELS, DROP_REASON_LABELS, STUDENT_FIELD_LABELS } from '../utils/field-labels';
@@ -14,6 +14,7 @@ import CheckItem from './ui/CheckItem';
  * 安全红线：本组件挂载本身零网络调用，绝不自动发送——
  * 只有用户点击「确认并开始 AI 分析」才触发 onAnalyze（即 App.handleAnalyze）；
  * analyzing 期间按钮禁用；provider 徽标绝不静默假装真实 AI。
+ * 布局：检查与确认操作区置顶（按钮随手可点），统计与折叠详情在下方。
  */
 
 /** 绝不发送的字段清单（与 field-policies 的删除分类对应；发送侧白名单见 payload.ts SENT_FIELDS） */
@@ -47,6 +48,13 @@ const ROW_COLUMNS: (keyof AnonymizedStudent)[] = [
   'perCapitaIncome', 'housingStatus', 'debtStatus',
 ];
 
+/** 按学生人数给出粗略预估时长（实测：50 人约 25-30 秒，分批 10 人/批并发 5） */
+function estimateDuration(n: number): string {
+  if (n <= 10) return '预计 10-20 秒';
+  if (n <= 50) return '预计 30 秒至 1 分钟';
+  return '预计 1-3 分钟';
+}
+
 export default function ProcessStep({
   output, scan, mappedColumns, meta, providerName, analyzing, error, onAnalyze, onReset,
 }: {
@@ -64,16 +72,137 @@ export default function ProcessStep({
 }) {
   const [showMapping, setShowMapping] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showNotSent, setShowNotSent] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const s = output.stats;
   const hitKeys = new Set(scan?.findings.map((f) => f.category) ?? []);
 
+  // 分析中计时：每秒刷新「已等待 X 秒」，分析结束归零
+  useEffect(() => {
+    if (!analyzing) { setElapsed(0); return; }
+    const timer = setInterval(() => setElapsed((x) => x + 1), 1000);
+    return () => clearInterval(timer);
+  }, [analyzing]);
+
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${analyzing ? 'pointer-events-none opacity-60' : ''}`}>
+      {/* 置顶操作区：检查结论 + 发送确认，按钮在首屏随手可点 */}
       <Card>
-        <h2 className="text-lg font-semibold text-slate-800">本地脱敏与安全检查</h2>
+        <h2 className="text-lg font-semibold text-slate-800">发送前检查与确认</h2>
         <p className="mt-1 text-sm text-slate-500">
-          文件导入后已自动完成脱敏与安全检查。原始学生信息仅在当前浏览器内处理，不存储、不上传。
+          在调用 AI 之前，对最终发送数据（共 {output.students.length} 名学生的匿名数据）再做一次敏感信息扫描。
+          如发现疑似敏感信息将阻止发送，且不允许绕过。系统不会自动发送，请确认后手动开始。
+        </p>
+
+        {!scan && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm text-slate-500">正在处理…</p>
+            <div className="mt-4">
+              <Button variant="secondary" onClick={onReset}>重新开始</Button>
+            </div>
+          </div>
+        )}
+
+        {scan && !scan.passed && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+            <p className="text-sm font-medium text-red-800">
+              ✗ 发现疑似敏感信息，已阻止发送。请重新导入并检查源文件后重试。
+            </p>
+            <ul className="mt-3 space-y-1">
+              {CHECK_LABELS.map((c) => (
+                <CheckItem
+                  key={c.key}
+                  label={c.label}
+                  ok={!hitKeys.has(c.key)}
+                  detail={
+                    hitKeys.has(c.key)
+                      ? scan.findings
+                          .filter((f) => f.category === c.key)
+                          .map((f) => `${f.field}: ${f.snippet}`)
+                          .join('；')
+                      : undefined
+                  }
+                />
+              ))}
+            </ul>
+            <div className="mt-4">
+              <Button variant="secondary" onClick={onReset}>重新开始</Button>
+            </div>
+          </div>
+        )}
+
+        {/* 扫描通过：绿色摘要 + 发送摘要 + 确认按钮（唯一分析入口，绝不自动发送） */}
+        {scan?.passed && (
+          <>
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+              <p className="text-sm font-medium text-emerald-800">✓ 未发现禁止发送的个人身份信息，可以开始分析</p>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
+              <p className="font-medium text-slate-700">将发送内容</p>
+              <ul className="mt-2 space-y-1 text-slate-600">
+                <li>· 学校名称（脱敏）：{meta.schoolName}</li>
+                <li>· 届别：{meta.cohort}</li>
+                <li>· 学生人数：{output.students.length} 人</li>
+                <li>· 每名学生：{SENT_FIELDS.length} 个已脱敏字段（匿名编号 student-001 起，仅本次会话内存有效）</li>
+                <li>
+                  · 分析模式：{providerName === 'mock'
+                    ? '本地模拟分析（数据不出本机，不会上传）'
+                    : '真实 AI 分析（经三道安全检查后直接发送至 DeepSeek）'}
+                </li>
+              </ul>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {analyzing ? (
+                <div className="flex w-full items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                  <span
+                    className="h-7 w-7 shrink-0 animate-spin rounded-full border-[3px] border-emerald-600 border-t-transparent"
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-emerald-800">
+                      AI 正在分析 {output.students.length} 名学生，请勿关闭页面…
+                    </p>
+                    <p className="mt-0.5 text-xs text-emerald-600">
+                      {estimateDuration(output.students.length)} · 已等待 {elapsed} 秒
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Button onClick={onAnalyze}>确认并开始 AI 分析</Button>
+              )}
+              <Button variant="secondary" onClick={onReset} disabled={analyzing}>重新开始</Button>
+            </div>
+            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+            {/* 绝不发送清单（默认收起，避免顶部长卡把按钮推远） */}
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-emerald-800">以下内容绝不会发送</p>
+                <button
+                  type="button"
+                  onClick={() => setShowNotSent(!showNotSent)}
+                  className="text-xs text-emerald-700 hover:underline"
+                >
+                  {showNotSent ? '收起' : '查看绝不发送清单'}
+                </button>
+              </div>
+              {showNotSent && (
+                <ul className="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
+                  {NOT_SENT_ITEMS.map((label) => <CheckItem key={label} label={label} ok />)}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="text-lg font-semibold text-slate-800">本地脱敏统计</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          脱敏已在浏览器内自动完成。以下为最终发送给 AI 的数据口径统计：
         </p>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard label="原始学生数" value={s.rawStudentCount} />
@@ -180,99 +309,6 @@ export default function ProcessStep({
           </div>
         )}
       </Card>
-
-      {/* 安全检查结果 */}
-      <Card>
-        <h3 className="text-base font-semibold text-slate-800">发送前安全检查</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          在调用 AI 之前，对最终发送数据（共 {output.students.length} 名学生的匿名数据）再做一次敏感信息扫描。
-          如发现疑似敏感信息将阻止发送，且不允许绕过。
-        </p>
-        <div className="mt-4">
-          {!scan && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm text-slate-500">正在处理…</p>
-              <div className="mt-4">
-                <Button variant="secondary" onClick={onReset}>重新开始</Button>
-              </div>
-            </div>
-          )}
-          {scan && scan.passed && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-              <p className="text-sm font-medium text-emerald-800">✓ 未发现禁止发送的个人身份信息</p>
-              <ul className="mt-3 space-y-1">
-                {CHECK_LABELS.map((c) => <CheckItem key={c.key} label={c.label} ok />)}
-              </ul>
-            </div>
-          )}
-          {scan && !scan.passed && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-              <p className="text-sm font-medium text-red-800">
-                ✗ 发现疑似敏感信息，已阻止发送。请重新导入并检查源文件后重试。
-              </p>
-              <ul className="mt-3 space-y-1">
-                {CHECK_LABELS.map((c) => (
-                  <CheckItem
-                    key={c.key}
-                    label={c.label}
-                    ok={!hitKeys.has(c.key)}
-                    detail={
-                      hitKeys.has(c.key)
-                        ? scan.findings
-                            .filter((f) => f.category === c.key)
-                            .map((f) => `${f.field}: ${f.snippet}`)
-                            .join('；')
-                        : undefined
-                    }
-                  />
-                ))}
-              </ul>
-              <div className="mt-4">
-                <Button variant="secondary" onClick={onReset}>重新开始</Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </Card>
-
-      {/* 发送区：仅扫描通过时渲染；绝不自动发送，仅用户点击确认才触发 */}
-      {scan?.passed && (
-        <Card>
-          <h3 className="text-base font-semibold text-slate-800">确认发送（发送前最终确认）</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            以下脱敏内容将发送至 DeepSeek（AI 服务）。发送前已通过三道安全检查；系统不会自动发送，请确认后手动开始。
-          </p>
-
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
-            <p className="font-medium text-slate-700">将发送内容</p>
-            <ul className="mt-2 space-y-1 text-slate-600">
-              <li>· 学校名称（脱敏）：{meta.schoolName}</li>
-              <li>· 届别：{meta.cohort}</li>
-              <li>· 学生人数：{output.students.length} 人</li>
-              <li>· 每名学生：{SENT_FIELDS.length} 个已脱敏字段（匿名编号 student-001 起，仅本次会话内存有效）</li>
-              <li>
-                · 分析模式：{providerName === 'mock'
-                  ? '本地模拟分析（数据不出本机，不会上传）'
-                  : '真实 AI 分析（经三道安全检查后直接发送至 DeepSeek）'}
-              </li>
-            </ul>
-          </div>
-
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-            <p className="text-sm font-medium text-emerald-800">以下内容绝不会发送</p>
-            <ul className="mt-2">
-              {NOT_SENT_ITEMS.map((label) => <CheckItem key={label} label={label} ok />)}
-            </ul>
-          </div>
-
-          <div className="mt-4 flex items-center gap-3">
-            <Button onClick={onAnalyze} disabled={analyzing}>
-              {analyzing ? 'AI 分析中，请勿关闭页面…' : '确认并开始 AI 分析'}
-            </Button>
-          </div>
-          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-        </Card>
-      )}
     </div>
   );
 }
