@@ -25,6 +25,9 @@ npm run build          # 产物在 dist/（Key 注入其中）
 scp -r dist server root@<x96max-ip>:/opt/pearl-visit/
 # 3. 启动（保持前台运行）
 cd /opt/pearl-visit/server && node static-server.mjs
+# 默认端口 5000；要直接用 80 端口需两件事：
+#   ① 给 node 加绑定特权端口的能力（一次）：sudo setcap cap_net_bind_service=+ep $(which node)
+#   ② 启动时指定端口：PORT=80 node static-server.mjs
 ```
 
 开机自启（可选，Armbian 用 systemd）：
