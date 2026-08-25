@@ -122,32 +122,60 @@ describe('AnalysisClient', () => {
     expect(result.students[0].studentId).toBe('student-001');
   });
 
-  it('content 非 JSON 且修复失败 → format', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('完全不是 JSON')));
+  it('content 非 JSON 且修复失败 → 修正提示重试一次后仍失败 → format', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('完全不是 JSON'));
+    vi.stubGlobal('fetch', fetchMock);
     const err = await client.analyze(payload).catch((e: unknown) => e);
     expect((err as AnalysisClientError).category).toBe('format');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 第二次请求携带修正提示（不含学生数据）
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(second.messages[2].role).toBe('user');
+    expect(second.messages[2].content).toContain('无法解析为 JSON');
   });
 
-  it('上游壳非法 JSON / choices 缺失 / content 为空 → format', async () => {
+  it('上游壳非法 JSON / choices 缺失 / content 为空 → format（不重试，上游响应结构问题）', async () => {
     for (const shellText of [
       'not json at all',
       JSON.stringify({ choices: [] }),
       JSON.stringify({ choices: [{ message: { content: '' } }] }),
     ]) {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => shellText } as Response));
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => shellText } as Response);
+      vi.stubGlobal('fetch', fetchMock);
       const err = await client.analyze(payload).catch((e: unknown) => e);
       expect((err as AnalysisClientError).category).toBe('format');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     }
   });
 
-  it('zod 校验失败（问题数不足）→ format', async () => {
+  it('zod 校验失败（问题数不足）→ 修正提示重试后仍失败 → format', async () => {
     const bad = {
       ...wireResponse,
       students: [{ ...wireResponse.students[0], interviewQuestions: ['q1'] }],
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(JSON.stringify(bad))));
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(bad)));
+    vi.stubGlobal('fetch', fetchMock);
     const err = await client.analyze(payload).catch((e: unknown) => e);
     expect((err as AnalysisClientError).category).toBe('format');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 第二次请求携带 zod 失败路径（无学生数据）
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(second.messages[2].content).toContain('students.0.interviewQuestions');
+    expect(second.messages[2].content).not.toContain('母亲');
+  });
+
+  it('第一次结构校验失败（问题数不足）→ 第二次合法 → 返回结果（修复一次成功）', async () => {
+    const bad = {
+      ...wireResponse,
+      students: [{ ...wireResponse.students[0], interviewQuestions: ['q1'] }],
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okResponse(JSON.stringify(bad)))
+      .mockResolvedValueOnce(okResponse(JSON.stringify(wireResponse)));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await client.analyze(payload);
+    expect(result.students[0].studentId).toBe('student-001');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('超时阈值触发 AbortController（fake timers）', async () => {
