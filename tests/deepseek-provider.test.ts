@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DeepSeekAnalysisProvider } from '../src/analysis/deepseek-provider';
-import { AnalysisClient } from '../src/analysis/analysis-client';
+import { AnalysisClient, DEEPSEEK_API_URL } from '../src/analysis/analysis-client';
 import { SecurityViolationError } from '../src/analysis/analysis-service';
 import type { AnalysisRequest, AnonymizedStudent } from '../src/types/student';
 
@@ -37,12 +37,18 @@ const wireResponse = (ids: string[]) => ({
   })),
 });
 
+/** DeepSeek 响应壳（直连模式） */
+function deepseekResponse(content: string): Response {
+  return {
+    ok: true, status: 200,
+    text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
+  } as Response;
+}
+
 function makeProvider(): { provider: DeepSeekAnalysisProvider; fetchMock: ReturnType<typeof vi.fn> } {
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: true, status: 200, text: async () => JSON.stringify(wireResponse(['student-001'])),
-  } as Response);
+  const fetchMock = vi.fn().mockResolvedValue(deepseekResponse(JSON.stringify(wireResponse(['student-001']))));
   vi.stubGlobal('fetch', fetchMock);
-  const client = new AnalysisClient({ apiUrl: 'https://example.org/api/analyze', timeoutMs: 30_000 });
+  const client = new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 });
   return { provider: new DeepSeekAnalysisProvider(client), fetchMock };
 }
 
@@ -70,41 +76,39 @@ describe('DeepSeekAnalysisProvider', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('通过后 fetch 恰一次，body 为脱敏 payload（requestId 为 UUID）', async () => {
+  it('通过后 fetch 恰一次，user 消息为脱敏 payload（requestId 为 UUID）', async () => {
     const { provider, fetchMock } = makeProvider();
     const result = await provider.analyze(request);
     expect(result.students[0].studentId).toBe('student-001');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://example.org/api/analyze');
+    expect(url).toBe(DEEPSEEK_API_URL);
     const body = JSON.parse(init.body);
-    expect(body.version).toBe('1.0');
-    expect(body.requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-    expect(body.school).toEqual({ name: '某中学' });
-    expect(body.students[0].id).toBe('student-001');
-    expect(JSON.stringify(body)).not.toContain('姓名');
-    expect(JSON.stringify(body)).not.toContain('13800138000');
+    expect(init.headers.Authorization).toBe('Bearer sk-test');
+    const wire = JSON.parse(body.messages[1].content);
+    expect(wire.version).toBe('1.0');
+    expect(wire.requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(wire.school).toEqual({ name: '某中学' });
+    expect(wire.students[0].id).toBe('student-001');
+    expect(JSON.stringify(wire)).not.toContain('姓名');
+    expect(JSON.stringify(wire)).not.toContain('13800138000');
   });
 
   it('响应学生集合与请求不一致（缺失学生）→ format 错误', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 200, text: async () => JSON.stringify(wireResponse([])),
-    } as Response);
+    const fetchMock = vi.fn().mockResolvedValue(deepseekResponse(JSON.stringify(wireResponse([]))));
     vi.stubGlobal('fetch', fetchMock);
     const provider = new DeepSeekAnalysisProvider(
-      new AnalysisClient({ apiUrl: 'https://example.org/api/analyze', timeoutMs: 30_000 }),
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
     );
     const err = await provider.analyze(request).catch((e: unknown) => e);
     expect((err as Error).message).toContain('格式异常');
   });
 
   it('响应含请求中不存在的 studentId → format 错误', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 200, text: async () => JSON.stringify(wireResponse(['student-999'])),
-    } as Response);
+    const fetchMock = vi.fn().mockResolvedValue(deepseekResponse(JSON.stringify(wireResponse(['student-999']))));
     vi.stubGlobal('fetch', fetchMock);
     const provider = new DeepSeekAnalysisProvider(
-      new AnalysisClient({ apiUrl: 'https://example.org/api/analyze', timeoutMs: 30_000 }),
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
     );
     const err = await provider.analyze(request).catch((e: unknown) => e);
     expect((err as Error).message).toContain('格式异常');
@@ -115,13 +119,10 @@ describe('DeepSeekAnalysisProvider', () => {
       ...request,
       students: [cleanStudent, { ...cleanStudent, anonymousId: 'student-002' }],
     };
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 200,
-      text: async () => JSON.stringify(wireResponse(['student-001', 'student-001'])),
-    } as Response);
+    const fetchMock = vi.fn().mockResolvedValue(deepseekResponse(JSON.stringify(wireResponse(['student-001', 'student-001']))));
     vi.stubGlobal('fetch', fetchMock);
     const provider = new DeepSeekAnalysisProvider(
-      new AnalysisClient({ apiUrl: 'https://example.org/api/analyze', timeoutMs: 30_000 }),
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
     );
     const err = await provider.analyze(two).catch((e: unknown) => e);
     expect((err as Error).message).toContain('格式异常');
@@ -132,13 +133,10 @@ describe('DeepSeekAnalysisProvider', () => {
       ...request,
       students: [cleanStudent, { ...cleanStudent, anonymousId: 'student-002' }],
     };
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 200,
-      text: async () => JSON.stringify(wireResponse(['student-002', 'student-001'])),
-    } as Response);
+    const fetchMock = vi.fn().mockResolvedValue(deepseekResponse(JSON.stringify(wireResponse(['student-002', 'student-001']))));
     vi.stubGlobal('fetch', fetchMock);
     const provider = new DeepSeekAnalysisProvider(
-      new AnalysisClient({ apiUrl: 'https://example.org/api/analyze', timeoutMs: 30_000 }),
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
     );
     const result = await provider.analyze(two);
     expect(result.students).toHaveLength(2);

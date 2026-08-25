@@ -31,7 +31,7 @@ export default function SendPreviewStep({
     <Card>
       <h2 className="text-lg font-semibold text-slate-800">发送数据预览（发送前最终确认）</h2>
       <p className="mt-1 text-sm text-slate-500">
-        以下内容将发送至指定分析服务器。发送前已通过三道安全检查；系统不会自动发送，请确认后手动开始。
+        以下脱敏内容将发送至 DeepSeek（AI 服务）。发送前已通过三道安全检查；系统不会自动发送，请确认后手动开始。
       </p>
 
       <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
@@ -44,7 +44,7 @@ export default function SendPreviewStep({
           <li>
             · 分析模式：{providerName === 'mock'
               ? '本地模拟分析（数据不出本机，不会上传）'
-              : '真实 AI 分析（经三道安全检查后发送至分析服务器）'}
+              : '真实 AI 分析（经三道安全检查后直接发送至 DeepSeek）'}
           </li>
         </ul>
       </div>

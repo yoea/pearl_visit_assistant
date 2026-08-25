@@ -114,4 +114,15 @@ describe('隐私红线静态守卫', () => {
     }
     expect(hits).toEqual([]);
   });
+
+  it('VITE_DEEPSEEK_API_KEY 运行时取值只允许出现在 provider-factory（Key 入口唯一；类型声明 vite-env.d.ts 除外）', () => {
+    const hits: string[] = [];
+    for (const f of files) {
+      const content = readFileSync(f, 'utf8');
+      if (content.includes('import.meta.env.VITE_DEEPSEEK_API_KEY') && relOf(f) !== 'analysis/provider-factory.ts') {
+        hits.push(relOf(f));
+      }
+    }
+    expect(hits).toEqual([]);
+  });
 });

@@ -34,7 +34,7 @@ function newRequestId(): string {
 }
 
 /**
- * DeepSeek 分析提供者（经分析服务器中转，前端绝不接触 API Key）。
+ * DeepSeek 分析提供者（直连 DeepSeek；Key 由 AnalysisClient 持有——局域网部署形态，用户明确授权）。
  * 安全链：重扫②（不信任调用方）→ createAnalysisPayload（唯一出站构造点）→ 出站终扫③ → fetch。
  * 任何一步失败即抛 SecurityViolationError / AnalysisClientError，绝不发送。
  * 本类与 AnalysisClient 不公共导出：仅 provider-factory 内部构造。

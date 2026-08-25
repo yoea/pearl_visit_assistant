@@ -69,7 +69,7 @@ describe('SendPreviewStep', () => {
     expect(screen.getByText(/本地模拟分析（数据不出本机，不会上传）/)).toBeTruthy();
     render(<SendPreviewStep output={output} meta={meta} providerName="deepseek" analyzing={false}
       onBack={() => {}} onConfirm={() => {}} />);
-    expect(screen.getByText(/真实 AI 分析（经三道安全检查后发送至分析服务器）/)).toBeTruthy();
+    expect(screen.getByText(/真实 AI 分析（经三道安全检查后直接发送至 DeepSeek）/)).toBeTruthy();
   });
 
   it('error 文案渲染（分类文案直显，不二次包装）', () => {

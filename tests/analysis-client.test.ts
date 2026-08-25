@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  AnalysisClient, AnalysisClientError, CATEGORY_MESSAGES, DEFAULT_TIMEOUT_MS,
+  AnalysisClient, AnalysisClientError, CATEGORY_MESSAGES, DEFAULT_TIMEOUT_MS, DEEPSEEK_API_URL,
 } from '../src/analysis/analysis-client';
 import { createAnalysisPayload } from '../src/analysis/payload';
 import type { AnalysisRequest, AnonymizedStudent } from '../src/types/student';
@@ -40,9 +40,12 @@ const wireResponse = {
   }],
 };
 
-function okResponse(body: unknown, init: Partial<Response> = {}): Response {
+/** DeepSeek 响应壳：choices[0].message.content 为模型文本 */
+function okResponse(content: string, init: Partial<Response> = {}): Response {
   return {
-    ok: true, status: 200, text: async () => JSON.stringify(body), ...init,
+    ok: true, status: 200,
+    text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
+    ...init,
   } as Response;
 }
 
@@ -52,23 +55,29 @@ function errorResponse(status: number, body = 'server error details'): Response 
   } as Response;
 }
 
-const client = new AnalysisClient({ apiUrl: 'https://example.org/api/analyze', timeoutMs: DEFAULT_TIMEOUT_MS });
+const client = new AnalysisClient({ apiKey: 'sk-test-123', timeoutMs: DEFAULT_TIMEOUT_MS });
 
 describe('AnalysisClient', () => {
   beforeEach(() => { vi.restoreAllMocks(); });
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('2xx 合法响应 → 解析成功；方法/头/body 正确', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse(wireResponse));
+  it('2xx 合法响应 → 解析成功；端点/方法/头/消息体正确', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(wireResponse)));
     vi.stubGlobal('fetch', fetchMock);
     const result = await client.analyze(payload);
     expect(result.schoolAnalysis.studentCount).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://example.org/api/analyze');
+    expect(url).toBe(DEEPSEEK_API_URL);
     expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer sk-test-123');
     expect(init.headers['Content-Type']).toBe('application/json');
-    expect(JSON.parse(init.body).requestId).toBe('req-1');
+    const body = JSON.parse(init.body);
+    expect(body.model).toBe('deepseek-chat');
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body.messages[0].role).toBe('system');
+    expect(body.messages[0].content).toContain('不是资格审批器');
+    expect(JSON.parse(body.messages[1].content).requestId).toBe('req-1');
   });
 
   it('401/403/400/404 → configuration 类别，文案不含服务端错误原文', async () => {
@@ -106,17 +115,29 @@ describe('AnalysisClient', () => {
     expect((err as AnalysisClientError).category).toBe('timeout');
   });
 
-  it('响应体非法 JSON → 修复后成功（markdown 围栏）', async () => {
-    const body = '好的，以下是分析结果：\n```json\n' + JSON.stringify(wireResponse) + '\n```';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(null, { text: async () => body })));
+  it('模型文本带 markdown 围栏 → 修复后成功', async () => {
+    const content = '好的，以下是分析结果：\n```json\n' + JSON.stringify(wireResponse) + '\n```';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(content)));
     const result = await client.analyze(payload);
     expect(result.students[0].studentId).toBe('student-001');
   });
 
-  it('响应体修复失败 → format', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(null, { text: async () => '完全不是 JSON' })));
+  it('content 非 JSON 且修复失败 → format', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('完全不是 JSON')));
     const err = await client.analyze(payload).catch((e: unknown) => e);
     expect((err as AnalysisClientError).category).toBe('format');
+  });
+
+  it('上游壳非法 JSON / choices 缺失 / content 为空 → format', async () => {
+    for (const shellText of [
+      'not json at all',
+      JSON.stringify({ choices: [] }),
+      JSON.stringify({ choices: [{ message: { content: '' } }] }),
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => shellText } as Response));
+      const err = await client.analyze(payload).catch((e: unknown) => e);
+      expect((err as AnalysisClientError).category).toBe('format');
+    }
   });
 
   it('zod 校验失败（问题数不足）→ format', async () => {
@@ -124,7 +145,7 @@ describe('AnalysisClient', () => {
       ...wireResponse,
       students: [{ ...wireResponse.students[0], interviewQuestions: ['q1'] }],
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(bad)));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(JSON.stringify(bad))));
     const err = await client.analyze(payload).catch((e: unknown) => e);
     expect((err as AnalysisClientError).category).toBe('format');
   });
@@ -140,7 +161,7 @@ describe('AnalysisClient', () => {
           }),
       );
       vi.stubGlobal('fetch', fetchMock);
-      const shortClient = new AnalysisClient({ apiUrl: 'https://example.org/api/analyze', timeoutMs: 1000 });
+      const shortClient = new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 1000 });
       const p = shortClient.analyze(payload).catch((e: unknown) => e);
       await vi.advanceTimersByTimeAsync(1000);
       const err = await p;
@@ -151,9 +172,10 @@ describe('AnalysisClient', () => {
   });
 
   it('响应体 text() 读取失败 → network（不泄漏原始异常）', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(null, {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200,
       text: async () => { throw new Error('body stream broken'); },
-    })));
+    } as unknown as Response));
     const err = await client.analyze(payload).catch((e: unknown) => e);
     expect((err as AnalysisClientError).category).toBe('network');
   });

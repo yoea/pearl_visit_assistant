@@ -3,9 +3,11 @@
 interface ImportMetaEnv {
   /** 分析提供者：'mock'（默认，含未设置/未知值）| 'real' */
   readonly VITE_ANALYSIS_PROVIDER?: string;
-  /** 分析服务器完整端点（real 时必填）。绝不放置任何 API Key */
-  readonly VITE_ANALYSIS_API_URL?: string;
-  /** 请求超时毫秒数，默认 30000 */
+  /** DeepSeek API Key（real 时必填）。局域网部署形态：随构建注入产物（用户明确授权） */
+  readonly VITE_DEEPSEEK_API_KEY?: string;
+  /** 模型名，默认 deepseek-chat */
+  readonly VITE_DEEPSEEK_MODEL?: string;
+  /** 请求超时毫秒数，默认 60000 */
   readonly VITE_ANALYSIS_TIMEOUT_MS?: string;
 }
 
