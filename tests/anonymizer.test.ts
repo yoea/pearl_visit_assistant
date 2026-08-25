@@ -127,6 +127,30 @@ describe('anonymize', () => {
     expect(out.students[0].gender).toBe('女');
   });
 
+  it('姓名变体表头（学生姓名（必填））也建立姓名索引', () => {
+    const variantCols = mapFields(['学生姓名（必填）', '性别']).mappedColumns;
+    const out = anonymize([rec({ '学生姓名（必填）': '测试戊', 性别: '女' })], variantCols);
+    expect(out.nameIndex.get('student-001')).toBe('测试戊');
+    expect(out.students[0].gender).toBe('女');
+  });
+
+  it('「姓名拼音」不建立姓名索引', () => {
+    const pinyinCols = mapFields(['姓名拼音', '性别']).mappedColumns;
+    const out = anonymize([rec({ 姓名拼音: 'ceshiwu', 性别: '女' })], pinyinCols);
+    expect(out.nameIndex.size).toBe(0);
+    expect(out.students[0].gender).toBe('女');
+  });
+
+  it('学生姓名变体与教师姓名变体共存时只取学生列', () => {
+    const bothCols = mapFields(['家访教师姓名（必填）', '学生姓名（必填）', '性别']).mappedColumns;
+    const out = anonymize(
+      [rec({ '家访教师姓名（必填）': '刘玉坤', '学生姓名（必填）': '测试己', 性别: '女' })],
+      bothCols,
+    );
+    expect(out.nameIndex.get('student-001')).toBe('测试己');
+    expect(JSON.stringify(out.students[0])).not.toContain('刘玉坤');
+  });
+
   it('排名或年级人数无效（0/负数）时区间为 null', () => {
     expect(anonymize([rec({ 录取高中全校排名: '0', 全年级人数: '923' })], mappedColumns).students[0].admissionRankBand).toBeNull();
     expect(anonymize([rec({ 录取高中全校排名: '-3', 全年级人数: '923' })], mappedColumns).students[0].admissionRankBand).toBeNull();

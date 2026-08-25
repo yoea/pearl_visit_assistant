@@ -25,8 +25,9 @@ function basicInfoLines(s: AnonymizedStudent): string[] {
   return lines;
 }
 
-/** 报告 → Markdown 文本（纯函数、确定性；不含日期随机量） */
-export function reportToMarkdown(report: Report): string {
+/** 报告 → Markdown 文本（纯函数、确定性；不含日期随机量）。
+ *  nameIndex（可选）：anonymousId → 真实姓名，仅本地显示用途；命中时标题显示「姓名（编号）」。 */
+export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string, string>): string {
   const lines: string[] = [];
   const sa = report.schoolAnalysis;
 
@@ -70,7 +71,8 @@ export function reportToMarkdown(report: Report): string {
   lines.push('');
   const dataById = new Map(report.studentsData.map((s) => [s.anonymousId, s]));
   for (const g of report.students) {
-    lines.push(`### ${g.studentId}`);
+    const display = nameIndex?.get(g.studentId) ?? g.studentId;
+    lines.push(`### ${escapeMdLine(display)}${nameIndex?.has(g.studentId) ? `（${g.studentId}）` : ''}`);
     lines.push('');
     lines.push('#### 1. 基本情况');
     lines.push('');

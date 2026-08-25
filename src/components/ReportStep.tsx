@@ -115,7 +115,7 @@ export default function ReportStep({
   );
 
   const download = () => {
-    const md = reportToMarkdown(report);
+    const md = reportToMarkdown(report, nameIndex);
     const date = report.generatedAt.slice(0, 10);
     downloadTextFile(`走访参考报告-${report.schoolName}-${date}.md`, md, 'text/markdown;charset=utf-8');
   };
@@ -137,36 +137,46 @@ export default function ReportStep({
             <Button variant="secondary" onClick={onReset}>重新开始</Button>
           </div>
         </div>
+        {nameIndex.size > 0 && (
+          <p className="mt-2 text-xs text-slate-400">下载文件含学生姓名，请妥善保管。</p>
+        )}
+        {nameIndex.size === 0 && (
+          <div className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            未识别到姓名列，列表按匿名编号显示。如需显示学生姓名，请确认表格包含「珍珠生姓名/姓名/学生姓名」列后重新导入。
+          </div>
+        )}
         <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
           本报告基于脱敏后的申请材料生成，仅供走访参考，不构成任何资助结论。
           最终资格判断由工作人员根据申请材料、现场面谈与学校情况综合决定。
         </div>
         {/* 本地查找：输入姓名（仅本机内存匹配）定位到匿名编号 */}
-        <div className="mt-4">
-          <label className="text-sm text-slate-600">面谈时快速定位学生（本地查找，姓名仅在本机匹配）：</label>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="输入学生姓名的一部分…"
-            className="mt-1 w-full max-w-sm rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-          />
-          {matches.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {matches.map((m) => (
-                <li key={m.id}>
-                  <button
-                    type="button"
-                    onClick={() => setOpen(m.id)}
-                    className="text-sm text-emerald-700 hover:underline"
-                  >
-                    {m.id}（{m.name}）
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        {nameIndex.size > 0 && (
+          <div className="mt-4">
+            <label className="text-sm text-slate-600">面谈时快速定位学生（本地查找，姓名仅在本机匹配）：</label>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="输入学生姓名的一部分…"
+              className="mt-1 w-full max-w-sm rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+            />
+            {matches.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {matches.map((m) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      onClick={() => setOpen(m.id)}
+                      className="text-sm text-emerald-700 hover:underline"
+                    >
+                      {m.id}（{m.name}）
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </Card>
 
       <Card>

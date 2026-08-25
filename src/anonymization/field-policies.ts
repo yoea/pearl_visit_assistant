@@ -62,10 +62,27 @@ export const FORBIDDEN_IDENTITY_ALIASES: string[] = [
 /** 第三方姓名别名：必须删除 */
 export const THIRD_PARTY_ALIASES: string[] = ['家访教师姓名', '家访教师', '审批人', '结对捐方'];
 
+/** 学生姓名列别名（精确）：nameIndex 构建优先按此精确匹配 */
+export const STUDENT_NAME_ALIASES: string[] = ['珍珠生姓名', '姓名', '学生姓名'];
+
 /** 姓名承载列别名（身份姓名 + 第三方姓名）：黑名单提取与扫描器共用，避免双源漂移 */
 export const NAME_BEARING_ALIASES: string[] = [
-  '珍珠生姓名', '姓名', '学生姓名', '家访教师姓名', '家访教师', '审批人', '结对捐方',
+  ...STUDENT_NAME_ALIASES, ...THIRD_PARTY_ALIASES,
 ];
+
+/** 学生姓名列判定（normalize 后）：精确别名，或含「姓名」的变体表头（如「学生姓名（必填）」）；
+ *  排除「姓名拼音」（拼音串会撞常见英文子串导致扫描误拦）。 */
+export function isStudentNameHeader(header: string): boolean {
+  const h = normalizeHeader(header);
+  return STUDENT_NAME_ALIASES.includes(h) || (h.includes('姓名') && !h.includes('拼音'));
+}
+
+/** 第三方姓名列判定（normalize 后）：精确别名，或含关键词的变体（如「家访教师姓名（必填）」） */
+export function isThirdPartyNameHeader(header: string): boolean {
+  const h = normalizeHeader(header);
+  return THIRD_PARTY_ALIASES.includes(h)
+    || ['家访教师', '审批人', '结对捐方'].some((t) => h.includes(t));
+}
 
 /** 内部编号/常量字段：删除（学校名称与期数在解析器中提取为请求元数据） */
 export const INTERNAL_ALIASES: string[] = [
@@ -90,6 +107,19 @@ export function classifyHeader(header: string): { canonicalKey: CanonicalKey | n
   }
   if (INTERNAL_ALIASES.includes(h)) {
     return { canonicalKey: null, action: { action: 'drop', reason: 'internal' } };
+  }
+  // 变体表头 fallback（顺序敏感）：第三方姓名先于学生姓名，
+  // 保证「家访教师姓名（必填）」等不落 identity——nameIndex 的 reason==='identity' 过滤依赖此区分
+  if (isThirdPartyNameHeader(h)) {
+    return { canonicalKey: null, action: { action: 'drop', reason: 'third-party' } };
+  }
+  if (isStudentNameHeader(h)) {
+    return { canonicalKey: null, action: { action: 'drop', reason: 'identity' } };
+  }
+  // 兜底：其余含「姓名」的表头（如「姓名拼音」）仍按身份信息安全删除，
+  // 但不进 nameIndex/黑名单（谓词已排除拼音，防拼音串污染清洗与扫描）
+  if (h.includes('姓名')) {
+    return { canonicalKey: null, action: { action: 'drop', reason: 'identity' } };
   }
   for (const [key, entry] of Object.entries(FIELD_POLICIES)) {
     if (entry.aliases.includes(h)) return { canonicalKey: key as CanonicalKey, action: entry.action };

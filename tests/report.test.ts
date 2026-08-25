@@ -57,6 +57,18 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(md).toContain('#### 6. 推荐面谈问题');
   });
 
+  it('传入 nameIndex 时学生标题显示真实姓名并附匿名编号', async () => {
+    const result = await new MockAnalysisProvider().analyze({
+      meta, students: [sampleStudent],
+    } satisfies AnalysisRequest);
+    const md = reportToMarkdown(
+      generateReport(result, meta, now, [sampleStudent]),
+      new Map([['student-001', '测试甲']]),
+    );
+    expect(md).toContain('### 测试甲（student-001）');
+    expect(md).not.toMatch(/^### student-001$/m);
+  });
+
   it('Markdown 不含真实身份信息与结论性表述', async () => {
     const result = await new MockAnalysisProvider().analyze({
       meta, students: [sampleStudent],

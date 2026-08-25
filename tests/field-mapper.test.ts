@@ -5,6 +5,7 @@ import {
   FORBIDDEN_IDENTITY_ALIASES,
   INTERNAL_ALIASES,
   isKnownHeaderName,
+  isStudentNameHeader,
   normalizeHeader,
   THIRD_PARTY_ALIASES,
 } from '../src/anonymization/field-policies';
@@ -61,6 +62,32 @@ describe('classifyHeader', () => {
       canonicalKey: null,
       action: { action: 'drop', reason: 'unknown' },
     });
+  });
+
+  it('姓名列变体表头（必填/星号/括号备注）→ drop/identity', () => {
+    for (const header of ['学生姓名（必填）', '珍珠生姓名*', '姓名 (Name)']) {
+      expect(classifyHeader(header)).toEqual({
+        canonicalKey: null,
+        action: { action: 'drop', reason: 'identity' },
+      });
+    }
+  });
+
+  it('第三方姓名变体表头 → drop/third-party（优先于学生姓名判定）', () => {
+    expect(classifyHeader('家访教师姓名（必填）')).toEqual({
+      canonicalKey: null,
+      action: { action: 'drop', reason: 'third-party' },
+    });
+    expect(classifyHeader('审批人（签字）')).toEqual({
+      canonicalKey: null,
+      action: { action: 'drop', reason: 'third-party' },
+    });
+  });
+
+  it('姓名拼音安全删除，但谓词判定非学生姓名列（防拼音串污染黑名单）', () => {
+    expect(classifyHeader('姓名拼音').action).toEqual({ action: 'drop', reason: 'identity' });
+    expect(isStudentNameHeader('姓名拼音')).toBe(false);
+    expect(isStudentNameHeader('家长姓名')).toBe(true);
   });
 });
 

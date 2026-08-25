@@ -3,7 +3,7 @@ import type {
 } from '../types/student';
 import { scrubText } from './text-scrubber';
 import { collectNameBlacklist } from './raw-store';
-import { NAME_BEARING_ALIASES } from './field-policies';
+import { STUDENT_NAME_ALIASES, isStudentNameHeader } from './field-policies';
 import { toNumber, toText } from '../utils/number';
 
 /** 排名 → 区间（降低校内公示排名的间接识别风险） */
@@ -70,10 +70,14 @@ export function anonymize(
     const anonymousId = `student-${String(i + 1).padStart(3, '0')}`;
     const student: AnonymizedStudent = { ...EMPTY_STUDENT, anonymousId };
 
-    // 姓名索引（仅本地内存，绝不进入 payload）
-    const nameCol = mappedColumns.find(
-      (c) => c.action.action === 'drop' && c.action.reason === 'identity' && NAME_BEARING_ALIASES.includes(c.normalizedHeader),
+    // 姓名索引（仅本地内存，绝不进入 payload）。
+    // 精确别名优先；变体表头（如「学生姓名（必填）」）经谓词兜底。
+    // reason==='identity' 过滤保证第三方（教师/审批人）列永不进 nameIndex。
+    const identityCols = mappedColumns.filter(
+      (c) => c.action.action === 'drop' && c.action.reason === 'identity',
     );
+    const nameCol = identityCols.find((c) => STUDENT_NAME_ALIASES.includes(c.normalizedHeader))
+      ?? identityCols.find((c) => isStudentNameHeader(c.normalizedHeader));
     if (nameCol) {
       const n = toText(rec.values[nameCol.header]);
       if (n) nameIndex.set(anonymousId, n);

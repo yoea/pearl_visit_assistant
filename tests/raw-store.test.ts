@@ -64,6 +64,20 @@ describe('collectNameBlacklist', () => {
     expect(names).toEqual(new Set(['测试乙', '王明']));
   });
 
+  it('姓名变体表头（必填/签字）也进黑名单', () => {
+    const names = collectNameBlacklist([
+      rec({ '学生姓名（必填）': '测试丁' }),
+      rec({ '家访教师姓名（必填）': '刘玉坤' }),
+      rec({ '审批人（签字）': '张磊' }),
+    ]);
+    expect(names).toEqual(new Set(['测试丁', '刘玉坤', '张磊']));
+  });
+
+  it('「姓名拼音」不进黑名单（拼音串会撞常见英文子串）', () => {
+    const names = collectNameBlacklist([rec({ 姓名拼音: 'zhangsan' })]);
+    expect(names.size).toBe(0);
+  });
+
   it('姓名别名均为身份/第三方别名表的子集（单向不变量）', () => {
     // 仅单向：NAME_BEARING_ALIASES ⊆ 身份别名 ∪ 第三方别名；并集还含身份证号/电话等
     // 非姓名别名，因此不做反向包含断言。

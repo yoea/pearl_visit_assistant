@@ -1,5 +1,5 @@
 import type { RawStudentRecord } from '../types/student';
-import { NAME_BEARING_ALIASES, normalizeHeader } from './field-policies';
+import { isStudentNameHeader, isThirdPartyNameHeader } from './field-policies';
 
 /**
  * 原始数据受控仓库（安全红线核心）。
@@ -45,12 +45,13 @@ export class RawStore {
 /** 应用级单例：一次会话一份原始数据 */
 export const rawStore = new RawStore();
 
-/** 从原始记录提取姓名黑名单。家访教师姓名可能含多个姓名，按标点/空白拆分。 */
+/** 从原始记录提取姓名黑名单。家访教师姓名可能含多个姓名，按标点/空白拆分。
+ *  变体表头（如「学生姓名（必填）」「审批人（签字）」）经谓词识别同样纳入。 */
 export function collectNameBlacklist(records: readonly RawStudentRecord[]): Set<string> {
   const names = new Set<string>();
   for (const r of records) {
     for (const key of Object.keys(r.values)) {
-      if (!NAME_BEARING_ALIASES.includes(normalizeHeader(key))) continue;
+      if (!isStudentNameHeader(key) && !isThirdPartyNameHeader(key)) continue;
       const v = r.values[key];
       if (typeof v !== 'string' || v.trim() === '') continue;
       for (const part of v.split(/[,，、;；\s]+/)) {
