@@ -33,8 +33,9 @@ const FORBIDDEN_TOKENS = [
   'axios', 'XMLHttpRequest', 'sendBeacon', 'WebSocket', 'process.',
 ];
 
-/** localStorage 唯一白名单文件（token 计数数字累计；用户对「无持久化」红线的唯一、有限放宽） */
-const LOCALSTORAGE_WHITELIST = new Set(['stats/token-usage-store.ts']);
+/** localStorage 白名单文件（用户对「无持久化」红线的有限放宽）：
+ * ① token-usage-store.ts：仅计数数字；② report-store.ts：报告全文 + 匿名编号↔真实姓名映射（仅本地） */
+const LOCALSTORAGE_WHITELIST = new Set(['stats/token-usage-store.ts', 'stats/report-store.ts']);
 
 /** console 除 warn/error（仅 analysis/ 目录允许，见第三个 it）外全禁——
  *  正则负向前瞻杜绝 console.table/dir/group/count/time/assert 等数据日志方法漏网 */
@@ -68,7 +69,7 @@ describe('隐私红线静态守卫', () => {
     expect(hits).toEqual([]);
   });
 
-  it('localStorage 只允许出现在 stats/token-usage-store.ts（唯一持久化入口，仅存 token 数字）', () => {
+  it('localStorage 只允许出现在白名单文件（token 计数 + 报告存档；仅本地，绝不上传）', () => {
     const hits: string[] = [];
     for (const f of files) {
       const content = readFileSync(f, 'utf8');
@@ -78,7 +79,8 @@ describe('隐私红线静态守卫', () => {
     }
     expect(hits).toEqual([]);
     // 白名单文件自身必须存在（防整个模块被误删后测试空过）
-    expect(files.map(relOf)).toContain('stats/token-usage-store.ts');
+    const rels = files.map(relOf);
+    for (const w of LOCALSTORAGE_WHITELIST) expect(rels).toContain(w);
   });
 
   it('fetch( 只允许出现在网络白名单文件（唯一网络出口）', () => {

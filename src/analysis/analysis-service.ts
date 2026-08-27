@@ -19,7 +19,14 @@ export class SecurityViolationError extends Error {
  * ② AI 输出绝不包含「通过/淘汰」类结论（需在提示词与输出校验中显式实现）。
  */
 export class AnalysisService {
-  constructor(private readonly provider: AnalysisProvider) {}
+  /**
+   * @param modelName 真实 AI 使用的模型名（如 deepseek-v4-flash）；mock 为 undefined。
+   * 仅供 UI 展示「使用的模型」提示，绝不参与任何逻辑判断。
+   */
+  constructor(
+    private readonly provider: AnalysisProvider,
+    readonly modelName?: string,
+  ) {}
 
   /** provider 身份（'mock' | 'deepseek'）：UI 据此显示模拟/真实徽标，绝不静默假装真实 AI */
   get providerName(): string {

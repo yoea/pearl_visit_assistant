@@ -1,6 +1,6 @@
 import { AnalysisService } from './analysis-service';
 import { MockAnalysisProvider } from './mock-provider';
-import { AnalysisClient, DEFAULT_TIMEOUT_MS } from './analysis-client';
+import { AnalysisClient, DEFAULT_TIMEOUT_MS, DEFAULT_MODEL } from './analysis-client';
 import { DeepSeekAnalysisProvider } from './deepseek-provider';
 
 export interface AnalysisServiceConfig {
@@ -36,12 +36,14 @@ export function createAnalysisService(config: AnalysisServiceConfig = {}): Analy
         ? String(config.timeoutMs)
         : import.meta.env.VITE_ANALYSIS_TIMEOUT_MS,
     );
+    const modelName = import.meta.env.VITE_DEEPSEEK_MODEL || DEFAULT_MODEL;
     return new AnalysisService(
       new DeepSeekAnalysisProvider(new AnalysisClient({
         apiKey,
         timeoutMs,
         model: import.meta.env.VITE_DEEPSEEK_MODEL || undefined,
       })),
+      modelName,
     );
   }
   return new AnalysisService(new MockAnalysisProvider());

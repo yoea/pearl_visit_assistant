@@ -51,6 +51,16 @@ describe('pipelineReducer', () => {
     expect(pipelineReducer(parsedState, { type: 'SCAN_SUCCEEDED', output, scan })).toBe(parsedState);
   });
 
+  it('RETURN_TO_SCAN：analyzed 回检查页（复用已脱敏数据），其他阶段忽略', () => {
+    const analyzed: PipelineState = { stage: 'analyzed', output, scan, result, report };
+    const back = pipelineReducer(analyzed, { type: 'RETURN_TO_SCAN' });
+    expect(back).toEqual({ stage: 'scanned', output, scan });
+    // 非 analyzed 阶段忽略
+    expect(pipelineReducer({ stage: 'idle' }, { type: 'RETURN_TO_SCAN' })).toEqual({ stage: 'idle' });
+    const scanned: PipelineState = { stage: 'scanned', output, scan };
+    expect(pipelineReducer(scanned, { type: 'RETURN_TO_SCAN' })).toBe(scanned);
+  });
+
   it('RESET 任意阶段回到 idle', () => {
     const analyzed: PipelineState = { stage: 'analyzed', output, scan, result, report };
     expect(pipelineReducer(analyzed, { type: 'RESET' })).toEqual({ stage: 'idle' });

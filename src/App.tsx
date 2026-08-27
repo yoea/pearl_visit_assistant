@@ -10,18 +10,25 @@ import { AnalysisClientError, SecurityViolationError } from './analysis/analysis
 import { generateReport } from './report/generator';
 import { InMemoryUsageStats } from './stats/usage-stats';
 import { recordTokenUsage, type CumulativeTokenUsage } from './stats/token-usage-store';
+import { saveReport, loadReport, deleteReport } from './stats/report-store';
+import { APP_TITLE } from './app-config';
 import type { TokenUsage } from './analysis/provider';
 import type { MappedColumn, RawStudentRecord } from './types/student';
 import type { ParsedState, Stage } from './types/pipeline';
+import type { Report } from './report/types';
 import Stepper from './components/Stepper';
 import ImportStep from './components/ImportStep';
 import ProcessStep from './components/ProcessStep';
 import ReportStep from './components/ReportStep';
+import ReportArchiveList from './components/ReportArchiveList';
 import HelpPage from './components/HelpPage';
 
 const usageStats = new InMemoryUsageStats();
 // provider 种类由环境变量决定（mock 默认 / real），网络 provider 仅工厂内部构造
 const analysisService = createAnalysisService();
+
+/** 版本标签：与 git tag / package.json version 保持同步 */
+const APP_VERSION = 'v1.1.0';
 
 /** 阶段 → 步骤条序号（与 Stage 联合类型编译期锁定，漏配即报错） */
 const STAGE_TO_STEP: Record<Stage, number> = {
@@ -39,6 +46,12 @@ export default function App() {
   const [tokenStats, setTokenStats] = useState<{
     usage: TokenUsage; cumulative: CumulativeTokenUsage;
   } | null>(null);
+  // 当前报告在本地存档中的 id（删除存档用）；从存档读取的旧报告视图（含其存档 id）
+  const [currentReportId, setCurrentReportId] = useState<string | null>(null);
+  const [archivedView, setArchivedView] = useState<{
+    id: string; report: Report; nameIndex: Map<string, string>;
+  } | null>(null);
+  const [archiveNotice, setArchiveNotice] = useState<string | null>(null);
   const metaRef = useRef<{ schoolName: string; cohort: string }>({ schoolName: '', cohort: '' });
   const nameBlacklistRef = useRef<Set<string>>(new Set());
   const mappingRef = useRef<MappedColumn[]>([]);
@@ -111,6 +124,18 @@ export default function App() {
           ? { usage: result.usage, cumulative: recordTokenUsage(result.usage) }
           : null,
       );
+      // 报告自动存档到本浏览器（含姓名映射，仅本机；30 天未访问自动过期）
+      const saved = saveReport(report, state.output.nameIndex);
+      if (saved.ok) {
+        setCurrentReportId(saved.id);
+        setArchiveNotice(null);
+      } else {
+        setCurrentReportId(null);
+        setArchiveNotice(saved.reason === 'quota'
+          ? '本地存档空间不足，本次报告未存档（可删除旧报告后重新分析）。'
+          : '当前浏览器不支持本地存档，本次报告仅本次会话可见。');
+      }
+      setArchivedView(null);
       dispatch({
         type: 'ANALYSIS_SUCCEEDED',
         output: state.output,
@@ -145,15 +170,57 @@ export default function App() {
     setImportError(undefined);
     setAnalyzeError(undefined);
     setTokenStats(null);
+    setCurrentReportId(null);
+    setArchivedView(null);
+    setArchiveNotice(null);
     dispatch({ type: 'RESET' });
   }, []);
 
+  /** 步骤条点击跳转：1=导入页（重新开始）；2=脱敏及检查（仅本次分析有数据时回检查页，否则回导入页） */
+  const handleStepClick = useCallback((step: number) => {
+    if (step === 1) {
+      handleReset();
+    } else if (step === 2) {
+      if (state.stage === 'analyzed') {
+        setArchivedView(null);
+        setTokenStats(null);
+        dispatch({ type: 'RETURN_TO_SCAN' });
+      } else {
+        handleReset(); // 无本次分析数据（如正在查看存档）：回导入页
+      }
+    }
+  }, [handleReset, state.stage]);
+
+  /** 从主页存档列表打开一份旧报告（读档即续期 30 天） */
+  const handleOpenArchived = useCallback((id: string) => {
+    const loaded = loadReport(id);
+    if (!loaded) return; // 已过期/不存在：列表下次挂载会自动刷新
+    setArchivedView({ id: loaded.id, report: loaded.report, nameIndex: new Map(Object.entries(loaded.nameIndex)) });
+    setTokenStats(null);
+    setArchiveNotice(null);
+  }, []);
+
+  /** 彻底删除报告存档（报告页底部按钮；confirm 确认已由 ReportStep 完成）：
+   *  分析完成页删除「当前报告」存档；存档查看页删除正在查看的报告。 */
+  const handleDeleteReport = useCallback(() => {
+    if (archivedView) {
+      deleteReport(archivedView.id);
+    } else if (currentReportId) {
+      deleteReport(currentReportId);
+    }
+    setCurrentReportId(null);
+    setArchiveNotice(null);
+  }, [archivedView, currentReportId]);
+
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-5xl px-4 py-4">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="text-lg font-semibold text-slate-800">珍珠生走访智能面谈辅助工具</h1>
+            <h1 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
+              {APP_TITLE}
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">{APP_VERSION}</span>
+            </h1>
             <button
               type="button"
               onClick={() => setShowHelp(!showHelp)}
@@ -165,13 +232,33 @@ export default function App() {
             </button>
           </div>
           <div className="mt-3">
-            <Stepper current={STAGE_TO_STEP[state.stage]} />
+            {/* 查看存档报告时视为「报告页」（步骤 3）；已完成步骤可点击跳转 */}
+            <Stepper
+              current={archivedView ? 3 : STAGE_TO_STEP[state.stage]}
+              onStepClick={handleStepClick}
+            />
           </div>
         </div>
       </header>
-      <main className={`mx-auto max-w-5xl px-4 py-6 ${state.stage === 'analyzed' ? 'rounded-xl bg-emerald-50/60' : ''}`}>
+      <main className={`mx-auto w-full max-w-5xl flex-1 px-4 py-6 ${state.stage === 'analyzed' ? 'rounded-xl bg-emerald-50/60' : ''}`}>
         {showHelp && <HelpPage onBack={() => setShowHelp(false)} />}
-        {!showHelp && state.stage === 'idle' && <ImportStep onFile={handleFile} error={importError} />}
+        {/* 查看存档报告时独占主区域（首页列表不再堆叠显示） */}
+        {!showHelp && state.stage === 'idle' && !archivedView && (
+          <>
+            <ImportStep onFile={handleFile} error={importError} />
+            <div className="mt-4"><ReportArchiveList onOpen={handleOpenArchived} /></div>
+          </>
+        )}
+        {!showHelp && archivedView && state.stage !== 'analyzed' && (
+          <ReportStep
+            report={archivedView.report}
+            nameIndex={archivedView.nameIndex}
+            tokenStats={null}
+            archived
+            onDelete={handleDeleteReport}
+            onReset={handleReset}
+          />
+        )}
         {!showHelp && (state.stage === 'anonymized' || state.stage === 'scanned') && (
           <ProcessStep
             output={state.output}
@@ -179,6 +266,7 @@ export default function App() {
             mappedColumns={mappingRef.current}
             meta={metaRef.current}
             providerName={analysisService.providerName}
+            modelName={analysisService.modelName}
             analyzing={analyzing}
             error={analyzeError}
             onAnalyze={() => void handleAnalyze()}
@@ -190,10 +278,50 @@ export default function App() {
             report={state.report}
             nameIndex={state.output.nameIndex}
             tokenStats={tokenStats}
+            onDelete={currentReportId ? handleDeleteReport : undefined}
             onReset={handleReset}
           />
         )}
+        {!showHelp && archiveNotice && state.stage === 'analyzed' && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+            {archiveNotice}
+          </div>
+        )}
       </main>
+
+      {/* 页脚：快速菜单（外链新窗口 + 帮助页内部切换）+ 版权 */}
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto max-w-5xl px-4 py-4">
+          <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
+            <a
+              href="https://boss.xhef.org/login"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-slate-500 transition-colors hover:text-emerald-700"
+            >
+              项目管理平台
+            </a>
+            <button
+              type="button"
+              onClick={() => setShowHelp(!showHelp)}
+              className="text-slate-500 transition-colors hover:text-emerald-700"
+            >
+              帮助页面
+            </button>
+            <a
+              href="https://www.xhef.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-slate-500 transition-colors hover:text-emerald-700"
+            >
+              基金会官网
+            </a>
+          </nav>
+          <p className="mt-2 text-center text-xs text-slate-400">
+            Copyright © 新华教育基金会 All Rights Reserved.
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

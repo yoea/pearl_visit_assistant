@@ -3,6 +3,7 @@ import type { SecurityScanResult } from '../security/scanner';
 import type { AnonymizationOutput, AnonymizedStudent, MappedColumn } from '../types/student';
 import { ACTION_LABELS, DROP_REASON_LABELS, STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { SENT_FIELDS } from '../analysis/payload';
+import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeric-validation';
 import Card from './ui/Card';
 import StatCard from './ui/StatCard';
 import Button from './ui/Button';
@@ -56,7 +57,7 @@ function estimateDuration(n: number): string {
 }
 
 export default function ProcessStep({
-  output, scan, mappedColumns, meta, providerName, analyzing, error, onAnalyze, onReset,
+  output, scan, mappedColumns, meta, providerName, modelName, analyzing, error, onAnalyze, onReset,
 }: {
   output: AnonymizationOutput;
   /** scanned 阶段一定携带扫描结果；anonymized 半态（自动流转的瞬时态）为 undefined，显示防御态 */
@@ -65,6 +66,8 @@ export default function ProcessStep({
   meta: { schoolName: string; cohort: string };
   /** 分析模式：'mock'（本地模拟，数据不出本机）| 'deepseek'（真实 AI）——绝不静默假装真实 AI */
   providerName: string;
+  /** 真实 AI 时使用的模型名（如 deepseek-v4-flash）；mock 为 undefined（显示本地模拟提示） */
+  modelName?: string;
   analyzing: boolean;
   error?: string;
   onAnalyze: () => void;
@@ -77,6 +80,9 @@ export default function ProcessStep({
   const [elapsed, setElapsed] = useState(0);
   const s = output.stats;
   const hitKeys = new Set(scan?.findings.map((f) => f.category) ?? []);
+  // 数字校验：身高/体重/收入/负债等易错字段（与报告页标注共用同一规则）
+  const numericIssues = output.students.flatMap((stu) =>
+    checkNumericIssues(stu).map((i) => ({ studentId: stu.anonymousId, name: output.nameIndex.get(stu.anonymousId), ...i })));
 
   // 分析中计时：每秒刷新「已等待 X 秒」，分析结束归零
   useEffect(() => {
@@ -90,7 +96,7 @@ export default function ProcessStep({
       {/* 置顶操作区：检查结论 + 发送确认，按钮在首屏随手可点。
           分析中仅确认按钮替换为动画反馈，下方统计/映射/预览卡片仍可自由查看。 */}
       <Card>
-        <h2 className="text-lg font-semibold text-slate-800">发送前检查与确认</h2>
+        <h2 className="text-lg font-semibold text-slate-800">分析前检查确认</h2>
         <p className="mt-1 text-sm text-slate-500">
           在调用 AI 之前，对最终发送数据（共 {output.students.length} 名学生的匿名数据）再做一次敏感信息扫描。
           如发现疑似敏感信息将阻止发送，且不允许绕过。系统不会自动发送，请确认后手动开始。
@@ -100,7 +106,7 @@ export default function ProcessStep({
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm text-slate-500">正在处理…</p>
             <div className="mt-4">
-              <Button variant="secondary" onClick={onReset}>重新开始</Button>
+              <Button variant="secondary" onClick={onReset}>返回上一步</Button>
             </div>
           </div>
         )}
@@ -128,7 +134,7 @@ export default function ProcessStep({
               ))}
             </ul>
             <div className="mt-4">
-              <Button variant="secondary" onClick={onReset}>重新开始</Button>
+              <Button variant="secondary" onClick={onReset}>返回上一步</Button>
             </div>
           </div>
         )}
@@ -155,6 +161,13 @@ export default function ProcessStep({
               </ul>
             </div>
 
+            {/* 醒目提示：本次分析使用的模型（真实 AI 显示模型名；mock 明确告知不使用大模型） */}
+            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-800">
+              {modelName
+                ? `本次分析将使用模型：${modelName}（真实 AI，直连 DeepSeek）`
+                : '本次为本地模拟分析（不使用大模型，数据不出本机）'}
+            </div>
+
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {analyzing ? (
                 <div className="flex w-full items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
@@ -174,7 +187,7 @@ export default function ProcessStep({
               ) : (
                 <Button onClick={onAnalyze}>确认并开始 AI 分析</Button>
               )}
-              <Button variant="secondary" onClick={onReset} disabled={analyzing}>重新开始</Button>
+              <Button variant="secondary" onClick={onReset} disabled={analyzing}>返回上一步</Button>
             </div>
             {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
@@ -214,12 +227,43 @@ export default function ProcessStep({
           <StatCard label="最终发送字段数" value={s.sentFieldCount} />
         </div>
         <ul className="mt-4 space-y-1">
-          {['原始姓名未发送', '身份证号未发送', '联系方式未发送', '详细地址未发送'].map((c) => (
+          {['原始姓名将不会发送给大模型', '身份证号将不会发送给大模型', '联系方式将不会发送给大模型', '详细地址将不会发送给大模型'].map((c) => (
             <li key={c} className="flex items-center gap-2 text-sm text-emerald-700">
               <span>✓</span> {c}
             </li>
           ))}
         </ul>
+      </Card>
+
+      {/* 数字校验：身高/体重/收入/负债等易错字段（分析前提前提示，AI 分析时进一步核查逻辑性） */}
+      <Card>
+        <h2 className="text-lg font-semibold text-slate-800">数字校验（身高/体重/收入/负债等）</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          对最容易搞错单位的数值字段做常识校验（如年收入填 1、2、3，体重填 105，负债 8 元）。
+          疑似错误会在分析前标出，AI 分析时将进一步核查数据逻辑性。
+        </p>
+        {numericIssues.length === 0 ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            ✓ 未发现疑似填写错误
+          </p>
+        ) : (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs font-medium text-amber-800">
+              发现 {numericIssues.length} 处疑似填写错误（{new Set(numericIssues.map((i) => i.studentId)).size} 名学生），请走访时重点核实：
+            </p>
+            <ul className="mt-2 space-y-1">
+              {numericIssues.map((i) => (
+                <li key={`${i.studentId}-${i.key}-${i.value}`} className="flex flex-wrap items-center gap-1.5 text-xs text-amber-800">
+                  <span className="font-medium">
+                    {i.studentId}{i.name ? `（${i.name}）` : ''}
+                  </span>
+                  <span className="text-amber-700">· {i.label}：{i.value}</span>
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium">{NUMERIC_ERROR_LABEL}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </Card>
 
       {/* 字段映射摘要（默认折叠） */}

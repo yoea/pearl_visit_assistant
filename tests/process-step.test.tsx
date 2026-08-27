@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import ProcessStep from '../src/components/ProcessStep';
 import type { SecurityScanResult } from '../src/security/scanner';
-import type { AnonymizationOutput, MappedColumn } from '../src/types/student';
+import type { AnonymizationOutput, AnonymizedStudent, MappedColumn } from '../src/types/student';
 
 const output: AnonymizationOutput = {
   students: [],
@@ -49,7 +49,7 @@ describe('ProcessStep（脱敏及检查合并页，安全红线）', () => {
     renderStep();
     expect(screen.getByText('✓ 未发现禁止发送的个人身份信息，可以开始分析')).toBeTruthy();
     expect(screen.getByText('确认并开始 AI 分析')).toBeTruthy();
-    expect(screen.getByText('发送前检查与确认')).toBeTruthy();
+    expect(screen.getByText('分析前检查确认')).toBeTruthy();
   });
 
   it('点击确认 → 恰好一次 onAnalyze（绝不重复触发）', () => {
@@ -59,11 +59,11 @@ describe('ProcessStep（脱敏及检查合并页，安全红线）', () => {
     expect(onAnalyze).toHaveBeenCalledTimes(1);
   });
 
-  it('analyzing 时确认按钮替换为进行中反馈，重新开始禁用（不会重复触发）', () => {
+  it('analyzing 时确认按钮替换为进行中反馈，返回上一步禁用（不会重复触发）', () => {
     const onAnalyze = vi.fn();
     renderStep({ analyzing: true, onAnalyze });
     expect(screen.queryByText('确认并开始 AI 分析')).toBeNull();
-    const reset = screen.getByText('重新开始') as HTMLButtonElement;
+    const reset = screen.getByText('返回上一步') as HTMLButtonElement;
     expect(reset.disabled).toBe(true);
     fireEvent.click(reset);
     expect(onAnalyze).not.toHaveBeenCalled();
@@ -104,18 +104,57 @@ describe('ProcessStep（脱敏及检查合并页，安全红线）', () => {
     expect(onAnalyze).not.toHaveBeenCalled();
   });
 
-  it('扫描失败 → 红色详情 + 发送区不渲染 + 重新开始触发 onReset', () => {
+  it('扫描失败 → 红色详情 + 发送区不渲染 + 返回上一步触发 onReset', () => {
     const onReset = vi.fn();
     renderStep({ scan: failedScan, onReset });
     expect(screen.getByText(/发现疑似敏感信息，已阻止发送/)).toBeTruthy();
     expect(screen.queryByText('确认并开始 AI 分析')).toBeNull();
-    fireEvent.click(screen.getByText('重新开始'));
+    fireEvent.click(screen.getByText('返回上一步'));
     expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it('确认按钮上方醒目显示使用模型：deepseek 模式显示模型名，mock 模式显示本地模拟', () => {
+    renderStep({ providerName: 'deepseek', modelName: 'deepseek-v4-flash' });
+    expect(screen.getByText(/本次分析将使用模型：deepseek-v4-flash/)).toBeTruthy();
+    renderStep();
+    expect(screen.getByText('本次为本地模拟分析（不使用大模型，数据不出本机）')).toBeTruthy();
   });
 
   it('scan undefined（半态防御）→ 正在处理文案 + 发送区不渲染', () => {
     renderStep({ scan: undefined });
     expect(screen.getByText('正在处理…')).toBeTruthy();
     expect(screen.queryByText('确认并开始 AI 分析')).toBeNull();
+  });
+
+  it('数字校验卡：无异常显示通过；有异常列出学生/字段/值并标注', () => {
+    const badStudent: AnonymizedStudent = {
+      anonymousId: 'student-001', gender: '女', ethnicity: '汉族', householdType: '农村',
+      height: '174cm', weight: '105kg', healthStatus: '健康', difficultyLevel: null,
+      enrollmentStatus: null, province: '云南省', city: '曲靖市', county: '会泽县',
+      ancestralHome: null, distanceToSchoolKm: 8, zhongkaoFullScore: 820, zhongkaoScore: 701,
+      admissionRankBand: '15%-30%', gradeSize: 923,
+      familySituation: '母亲患心脏病', visitMethod: '入户家访', visitSummary: '收入单一',
+      awardsAndInterests: '阅读', applicationReason: '家庭困难', approvalComment: null,
+      housingStatus: '自建房', transportation: '无',
+      annualIncome: 30000, annualIncomeNote: null, perCapitaIncome: 8000,
+      schoolChildrenCount: 2, difficultyReason: '母亲心脏病', elderlySupportStatus: '4人',
+      elderlySupportNote: null, debtStatus: '8.00元', debtNote: null,
+    };
+    renderStep({
+      output: {
+        students: [badStudent],
+        stats: {
+          rawStudentCount: 1, rawFieldCount: 0, sensitiveFieldCount: 0,
+          droppedFieldCount: 0, generalizedFieldCount: 0, sentFieldCount: 0,
+        },
+        nameIndex: new Map([['student-001', '王小明']]),
+      },
+    });
+    expect(screen.getByText('数字校验（身高/体重/收入/负债等）')).toBeTruthy();
+    expect(screen.getByText('发现 2 处疑似填写错误（1 名学生），请走访时重点核实：')).toBeTruthy();
+    expect(screen.getAllByText(/student-001（王小明）/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/体重：105kg/)).toBeTruthy();
+    expect(screen.getByText(/负债情况：8.00元/)).toBeTruthy();
+    expect(screen.getAllByText('疑似填写错误待核实')).toHaveLength(2);
   });
 });

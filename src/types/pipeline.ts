@@ -40,4 +40,5 @@ export type PipelineEvent =
       result: AnalysisResult;
       report: Report;
     }
+  | { type: 'RETURN_TO_SCAN' }
   | { type: 'RESET' };

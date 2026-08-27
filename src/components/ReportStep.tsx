@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Report } from '../report/types';
 import type { StudentAnalysis, TokenUsage } from '../analysis/provider';
 import type { CumulativeTokenUsage } from '../stats/token-usage-store';
@@ -7,6 +7,7 @@ import { reportToMarkdown } from '../report/markdown';
 import { reportToHtml } from '../report/html';
 import { downloadTextFile } from '../utils/download';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
+import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeric-validation';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Badge from './ui/Badge';
@@ -40,15 +41,39 @@ function MiniBarChart({ items, color }: { items: { label: string; count: number 
 }
 
 /** 本地学生数据 → 基本信息行（null/空串过滤，anonymousId 不展示） */
-function basicInfoOf(s: AnonymizedStudent): [string, string][] {
-  const out: [string, string][] = [];
+function basicInfoOf(s: AnonymizedStudent): { key: string; label: string; value: string }[] {
+  const out: { key: string; label: string; value: string }[] = [];
   for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
     if (k === 'anonymousId') continue;
     const v = s[k];
     if (v == null || v === '') continue;
-    out.push([STUDENT_FIELD_LABELS[k], String(v)]);
+    out.push({ key: k, label: STUDENT_FIELD_LABELS[k], value: String(v) });
   }
   return out;
+}
+
+/**
+ * 单字段常识/单位校验（规则与脱敏阶段共享，见 numeric-validation.ts）。
+ * 返回统一提示文案「疑似填写错误待核实」，无异常返回 null。
+ */
+export function fieldAnomalyOf(key: string, v: string, s: AnonymizedStudent): string | null {
+  return checkNumericIssues(s).some((i) => i.key === key && i.value === v) ? NUMERIC_ERROR_LABEL : null;
+}
+
+const IMPORTANCE_LABEL: Record<string, string> = { high: '高', medium: '中', low: '低' };
+
+/** 图标 + 标题 + 正文的文本卡片（浅底、左侧色条） */
+function TextCard({ icon, title, text, accent }: {
+  icon: string; title: string; text: string; accent: string;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <h4 className={`flex items-center gap-1.5 border-l-4 ${accent} pl-2 text-xs font-semibold text-slate-700`}>
+        <span aria-hidden="true">{icon}</span> {title}
+      </h4>
+      <p className="mt-1.5 text-xs leading-relaxed text-slate-600">{text}</p>
+    </div>
+  );
 }
 
 function StudentSection({ g, local }: {
@@ -56,84 +81,155 @@ function StudentSection({ g, local }: {
   local: AnonymizedStudent | undefined;
 }) {
   const basics = local ? basicInfoOf(local) : [];
+  const highFactors = g.mainDifficultyFactors.filter((f) => f.importance === 'high');
   return (
     <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
-      {g.mainDifficultyFactors.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {g.mainDifficultyFactors.map((f) => (
-            <Badge key={f.factor} tone={IMPORTANCE_TONE[f.importance]}>{f.factor} · {f.importance}</Badge>
-          ))}
+      {/* 重点困难概览条：突出 high 因素 */}
+      {highFactors.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <span className="text-xs font-semibold text-amber-800">重点困难</span>
+          {highFactors.map((f) => <Badge key={f.factor} tone="amber">{f.factor}</Badge>)}
         </div>
       )}
+
+      {/* 基本情况：两列信息卡（label 左 / value 右） */}
       {basics.length > 0 && (
-        <section>
-          <h4 className="border-l-4 border-slate-300 pl-2 font-medium text-slate-700">基本情况</h4>
-          <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
-            {basics.map(([label, value]) => <li key={label}>· {label}：{value}</li>)}
-          </ul>
-        </section>
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <h4 className="flex items-center gap-1.5 border-l-4 border-slate-300 pl-2 text-xs font-semibold text-slate-700">
+            <span aria-hidden="true">📋</span> 基本情况
+          </h4>
+          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+            {basics.map(({ key, label, value }) => (
+              <div key={label} className="flex items-baseline gap-1.5">
+                <dt className="w-24 shrink-0 text-xs text-slate-400">{label}</dt>
+                <dd className="text-xs text-slate-700">
+                  {value}
+                  {fieldAnomalyOf(key, value, local!) && (
+                    <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">疑似填写错误待核实</span>
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       )}
-      <section>
-        <h4 className="border-l-4 border-blue-300 pl-2 font-medium text-slate-700">材料要点摘要</h4>
-        <p className="mt-1 text-xs text-slate-600">{g.summary}</p>
-      </section>
-      <section>
-        <h4 className="border-l-4 border-emerald-300 pl-2 font-medium text-slate-700">家庭情况概括</h4>
-        <p className="mt-1 text-xs text-slate-600">{g.familySituation}</p>
-      </section>
-      <section>
-        <h4 className="border-l-4 border-amber-300 pl-2 font-medium text-slate-700">主要困难因素</h4>
+
+      <TextCard icon="📝" title="材料要点摘要" accent="border-blue-300" text={g.summary} />
+      <TextCard icon="👪" title="家庭情况概括" accent="border-emerald-300" text={g.familySituation} />
+
+      {/* 主要困难因素：每因素独立小卡 */}
+      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <h4 className="flex items-center gap-1.5 border-l-4 border-amber-300 pl-2 text-xs font-semibold text-slate-700">
+          <span aria-hidden="true">⚠️</span> 主要困难因素
+        </h4>
         {g.mainDifficultyFactors.length > 0 ? (
-          <ul className="mt-1 space-y-1 text-xs text-slate-600">
+          <div className="mt-2 space-y-1.5">
             {g.mainDifficultyFactors.map((f) => (
-              <li key={f.factor} className="flex flex-wrap items-center gap-2">
-                <Badge tone={IMPORTANCE_TONE[f.importance]}>{f.importance}</Badge>
-                <span className="font-medium">{f.factor}</span>
-                <span className="text-slate-500">{f.evidence}</span>
+              <div key={f.factor} className="flex items-start gap-2 rounded-md bg-slate-50 px-3 py-2">
+                <Badge tone={IMPORTANCE_TONE[f.importance]}>{IMPORTANCE_LABEL[f.importance]}</Badge>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-slate-800">{f.factor}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{f.evidence}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-1.5 text-xs text-slate-400">材料中未识别出明显困难因素。</p>
+        )}
+      </div>
+
+      {/* 需要重点核实：红色醒目卡 */}
+      {g.informationToVerify.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+          <h4 className="flex items-center gap-1.5 border-l-4 border-red-400 pl-2 text-xs font-semibold text-red-800">
+            <span aria-hidden="true">🔍</span> 需要重点核实
+          </h4>
+          <ul className="mt-1.5 space-y-1">
+            {g.informationToVerify.map((v) => (
+              <li key={v} className="flex gap-1.5 text-xs leading-relaxed text-red-800">
+                <span aria-hidden="true" className="shrink-0">⚠</span> {v}
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="mt-1 text-xs text-slate-400">材料中未识别出明显困难因素。</p>
-        )}
-      </section>
-      {g.informationToVerify.length > 0 && (
-        <section>
-          <h4 className="border-l-4 border-amber-400 pl-2 font-medium text-amber-700">需要重点核实</h4>
-          <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
-            {g.informationToVerify.map((v) => <li key={v}>· {v}</li>)}
-          </ul>
-        </section>
+        </div>
       )}
-      <section>
-        <h4 className="border-l-4 border-violet-300 pl-2 font-medium text-slate-700">推荐面谈问题</h4>
-        <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-slate-600">
-          {g.interviewQuestions.map((q) => <li key={q}>{q}</li>)}
+
+      {/* 推荐面谈问题：编号圆点列表 */}
+      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <h4 className="flex items-center gap-1.5 border-l-4 border-violet-300 pl-2 text-xs font-semibold text-slate-700">
+          <span aria-hidden="true">💬</span> 推荐面谈问题
+        </h4>
+        <ol className="mt-2 space-y-1.5">
+          {g.interviewQuestions.map((q, i) => (
+            <li key={q} className="flex items-start gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-semibold text-emerald-700">
+                {i + 1}
+              </span>
+              <span className="text-xs leading-relaxed text-slate-700">{q}</span>
+            </li>
+          ))}
         </ol>
-      </section>
+      </div>
+
+      {/* 面谈注意事项：琥珀色提醒卡 */}
       {g.interviewNotes.length > 0 && (
-        <section>
-          <h4 className="border-l-4 border-amber-400 pl-2 font-medium text-amber-700">面谈注意事项</h4>
-          <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
-            {g.interviewNotes.map((c) => <li key={c}>· {c}</li>)}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <h4 className="flex items-center gap-1.5 border-l-4 border-amber-400 pl-2 text-xs font-semibold text-amber-800">
+            <span aria-hidden="true">📌</span> 面谈注意事项
+          </h4>
+          <ul className="mt-1.5 space-y-1">
+            {g.interviewNotes.map((c) => (
+              <li key={c} className="flex gap-1.5 text-xs leading-relaxed text-amber-800">
+                <span aria-hidden="true" className="shrink-0">·</span> {c}
+              </li>
+            ))}
           </ul>
-        </section>
+        </div>
       )}
     </div>
   );
 }
 
 export default function ReportStep({
-  report, nameIndex, tokenStats, onReset,
+  report, nameIndex, tokenStats, archived, onDelete, onReset,
 }: {
   report: Report;
   nameIndex: Map<string, string>;
   /** 最近一次分析的 token 用量 + 本机累计（仅真实 AI；mock 为 null 不展示） */
   tokenStats: { usage: TokenUsage; cumulative: CumulativeTokenUsage } | null;
+  /** 是否从本地存档读取的旧报告（非本次新生成） */
+  archived?: boolean;
+  /** 提供后底部显示「彻底删除本报告」（从本机浏览器存储永久删除存档） */
+  onDelete?: () => void;
   onReset: () => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [deleted, setDeleted] = useState(false);
+  // 分析完成庆祝动画：弹窗 3.4 秒后淡出，4 秒后卸载（存档读取的历史报告不庆祝）
+  const [celebrate, setCelebrate] = useState<'show' | 'leaving' | 'hidden'>(archived ? 'hidden' : 'show');
+  // 本地查找的学生信息模态框（studentId）
+  const [modalId, setModalId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (archived) return;
+    const t1 = setTimeout(() => setCelebrate('leaving'), 3400);
+    const t2 = setTimeout(() => setCelebrate('hidden'), 4000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [archived]);
+
+  /** 打开学生信息模态框（存在该生才打开） */
+  const openStudent = (id: string | null) => {
+    if (id && report.students.some((s) => s.studentId === id)) setModalId(id);
+  };
+
+  const handleDelete = () => {
+    if (!onDelete) return;
+    if (!window.confirm('彻底删除后不可恢复。确定从本浏览器删除这份报告的存档吗？')) return;
+    onDelete();
+    setDeleted(true);
+  };
 
   // 本地姓名查找：仅内存匹配（匿名 ID ↔ 姓名），绝不发送
   const matches = useMemo(() => {
@@ -188,12 +284,27 @@ export default function ReportStep({
 
   return (
     <div className="space-y-4">
+      {/* 分析成功庆祝浮层：居中弹出 + 绿色光环脉冲，数秒后淡出（不拦截点击） */}
+      {celebrate !== 'hidden' && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
+          <div className={`flex flex-col items-center rounded-2xl bg-white px-10 py-8 shadow-2xl ${celebrate === 'leaving' ? 'animate-fade-out' : 'animate-pop-in'}`}>
+            <span className="animate-ring-pulse flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-3xl text-white">✓</span>
+            <p className="mt-4 text-lg font-semibold text-slate-800">分析完成！</p>
+            <p className="mt-1 text-sm text-slate-500">报告已生成</p>
+          </div>
+        </div>
+      )}
+
       {/* 分析完成横幅：与检查页明显区分，让用户一眼知道分析已结束 */}
       <div className="flex items-center gap-3 rounded-lg bg-emerald-600 px-4 py-3 text-white shadow">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20 text-base" aria-hidden="true">✓</span>
         <div>
-          <p className="text-sm font-semibold">AI 分析已完成</p>
-          <p className="mt-0.5 text-xs text-emerald-100">以下报告基于脱敏材料生成，仅供走访参考，不构成任何资助结论。</p>
+          <p className="text-sm font-semibold">{archived ? '已从本地存档读取报告' : 'AI 分析已完成'}</p>
+          <p className="mt-0.5 text-xs text-emerald-100">
+            {archived
+              ? '该报告保存在本浏览器（仅本机），30 天内未打开查看将自动过期删除。'
+              : '以下报告基于脱敏材料生成，仅供走访参考，不构成任何资助结论。'}
+          </p>
         </div>
       </div>
       <Card>
@@ -207,7 +318,7 @@ export default function ReportStep({
           <div className="flex flex-wrap gap-2">
             <Button onClick={download}>下载 Markdown</Button>
             <Button onClick={downloadHtml}>下载单文件 HTML</Button>
-            <Button variant="secondary" onClick={onReset}>重新开始</Button>
+            <Button variant="secondary" onClick={onReset}>开始新的分析</Button>
           </div>
         </div>
         {/* token 用量统计（仅真实 AI）：本次调用 + 本机累计，便于统计 API 消耗 */}
@@ -252,32 +363,49 @@ export default function ReportStep({
           本报告基于脱敏后的申请材料生成，仅供走访参考，不构成任何资助结论。
           最终资格判断由工作人员根据申请材料、现场面谈与学校情况综合决定。
         </div>
-        {/* 本地查找：输入姓名（仅本机内存匹配）定位到匿名编号 */}
+        {/* 本地查找：输入姓名（仅本机内存匹配）实时下拉 + 查看按钮弹出学生信息模态框 */}
         {nameIndex.size > 0 && (
           <div className="mt-4">
             <label className="text-sm text-slate-600">面谈时快速定位学生（本地查找，姓名仅在本机匹配）：</label>
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="输入学生姓名的一部分…"
-              className="mt-1 w-full max-w-sm rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-            />
-            {matches.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {matches.map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      onClick={() => setOpen(m.id)}
-                      className="text-sm text-emerald-700 hover:underline"
-                    >
-                      {m.id}（{m.name}）
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="relative mt-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="输入学生姓名的一部分…"
+                  className="w-56 shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+                />
+                <button
+                  type="button"
+                  disabled={matches.length === 0}
+                  onClick={() => openStudent(matches[0]?.id ?? null)}
+                  className="shrink-0 rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                >
+                  查看
+                </button>
+              </div>
+              {/* 实时下拉搜索结果（输入即显示，匹配姓名以列表形式展示） */}
+              {query.trim() !== '' && (
+                <ul role="listbox" className="animate-slide-down absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                  {matches.length === 0 && (
+                    <li className="px-3 py-2 text-xs text-slate-400">未找到匹配的学生</li>
+                  )}
+                  {matches.map((m) => (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        onClick={() => openStudent(m.id)}
+                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-emerald-50"
+                      >
+                        <span>{m.name}</span>
+                        <span className="text-xs text-slate-400">{m.id}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         )}
       </Card>
@@ -367,6 +495,58 @@ export default function ReportStep({
           ))}
         </div>
       </Card>
+
+      {/* 彻底删除本报告（本地存档管理） */}
+      {onDelete && (
+        <div className="rounded-lg border border-red-100 bg-red-50/60 px-4 py-3 text-center">
+          {deleted ? (
+            <p className="text-sm text-emerald-700">✓ 已从本浏览器彻底删除这份报告的存档（当前页面仍可查看）。</p>
+          ) : (
+            <>
+              <p className="text-xs text-slate-500">本报告已自动存档到本浏览器（含学生姓名，仅本机使用）。</p>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="mt-2 text-sm font-medium text-red-600 hover:text-red-800 hover:underline"
+              >
+                彻底删除本报告
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 学生信息模态框（本地查找查看按钮 / 下拉条目触发） */}
+      {modalId && report.students.some((s) => s.studentId === modalId) && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setModalId(null)}
+        >
+          <div
+            className="animate-pop-in max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
+              <p className="text-sm font-semibold text-slate-800">
+                {nameIndex.get(modalId) ?? modalId}
+                <span className="ml-2 text-xs font-normal text-slate-400">{modalId}</span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setModalId(null)}
+                aria-label="关闭"
+                className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+            <StudentSection
+              g={report.students.find((s) => s.studentId === modalId)!}
+              local={dataById.get(modalId)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { z } from 'zod';
 import type { CellValue } from '../types/student';
-import { normalizeHeader } from '../anonymization/field-policies';
+import { normalizeHeader, isKnownHeaderName } from '../anonymization/field-policies';
 import { detectHeaderRow } from './header-detector';
 
 export interface ParsedExcel {
@@ -58,6 +58,10 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
   for (let i = headerIdx + 1; i < matrix.length; i++) {
     const rawRow = matrix[i];
     if (!rawRow || rawRow.every((c) => c == null || String(c).trim() === '')) continue;
+    // 子表头/分组行：命中多个已知字段名（如导出文件的第二行表头，含省/市/区与尾部重复字段名）。
+    // 真实数据行是值不是字段名，命中数必然为 0；≥2 即视为结构行跳过，不污染学生数据。
+    const knownHits = rawRow.filter((c) => typeof c === 'string' && isKnownHeaderName(String(c))).length;
+    if (knownHits >= 2) continue;
     const rec: Record<string, CellValue> = {};
     headers.forEach((h, j) => {
       if (h !== '') rec[h] = (rawRow[j] ?? null) as CellValue;
@@ -66,12 +70,24 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
     rowNumbers.push(i + 1); // i 是 matrix 下标（0-based），sheet 行号 = i + 1
   }
 
-  const pickFirstNonEmpty = (alias: string): string | null => {
-    const col = headers.find((h) => normalizeHeader(h) === normalizeHeader(alias));
+  /** 找列（loose 时按包含匹配，容忍「珍珠班编号（必填）」等变体）；取该列首个非空值 */
+  const pickFirstNonEmpty = (alias: string, loose = false): string | null => {
+    const col = headers.find((h) => {
+      const n = normalizeHeader(h);
+      return loose ? n.includes(normalizeHeader(alias)) : n === normalizeHeader(alias);
+    });
     if (!col) return null;
     const hit = rows.find((r) => r[col] != null && String(r[col]).trim() !== '');
-    return hit ? String(hit[col]).trim() : null;
+    if (!hit) return null;
+    const v = String(hit[col]).trim();
+    // 数字 0 / 字符串 '0' 视为未填写（raw:false 下空期数常渲染为 '0'，如「期数」列未填时）
+    return v !== '' && v !== '0' ? v : null;
   };
+
+  /** 届别提取：期数 → 珍珠班编号尾段（黑-03-26 → 26 → 2026级）→ 资助项目名称（2026级…） */
+  const cohort = pickFirstNonEmpty('期数')
+    ?? cohortFromClassNo(pickFirstNonEmpty('珍珠班编号', true))
+    ?? cohortFromProjectName(pickFirstNonEmpty('资助项目名称', true));
 
   const result: ParsedExcel = {
     sheetName: wb.SheetNames[0],
@@ -79,9 +95,25 @@ export function parseExcel(buffer: ArrayBuffer): ParsedExcel {
     rows,
     rowNumbers,
     schoolName: pickFirstNonEmpty('学校名称'),
-    cohort: pickFirstNonEmpty('期数'),
+    cohort,
     headerRowIndex: headerIdx + 1,
   };
   ParsedExcelSchema.parse(result); // 结构校验
   return result;
+}
+
+/** 珍珠班编号尾部两位 → 届别（「黑-03-26」→ 26 → 2026级）；非 20-29 段不猜测（避免把班号/学校编号误当届别） */
+function cohortFromClassNo(v: string | null): string | null {
+  if (!v) return null;
+  const m = /(?:^|[- ])(\d{2})级?$/.exec(v);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return n >= 20 && n <= 29 ? `20${m[1]}级` : null;
+}
+
+/** 资助项目名称中的「20XX级」→ 届别（「2026级捡回珍珠计划-高中段」→ 2026级） */
+function cohortFromProjectName(v: string | null): string | null {
+  if (!v) return null;
+  const m = /(20\d{2})级/.exec(v);
+  return m ? `${m[1]}级` : null;
 }

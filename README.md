@@ -1,4 +1,4 @@
-# 珍珠生走访智能面谈辅助工具
+# 珍珠生走访审核辅助平台
 
 新华教育基金会内部工具：将候选珍珠生 Excel 在**本地浏览器**中完成读取、清洗、脱敏，
 再将脱敏数据交由 AI（当前为本地规则引擎模拟）生成「走访参考报告」。
@@ -51,6 +51,8 @@ npm test           # 运行全部测试
 | `VITE_DEEPSEEK_API_KEY` | DeepSeek API Key（real 时必填） | 空 |
 | `VITE_DEEPSEEK_MODEL` | 模型名 | `deepseek-chat` |
 | `VITE_ANALYSIS_TIMEOUT_MS` | 请求超时毫秒数 | `60000` |
+| `VITE_APP_TITLE` | 页面标题（浏览器标签页/页眉/首页） | `珍珠生走访审核辅助平台` |
+| `VITE_APP_SUBTITLE` | 副标题（功能说明，首页标题下方） | 见 `.env.example` |
 
 - `real` 但未配置 Key 时自动回退 Mock 并在控制台提示。
 - 可复制 `.env.example` 为 `.env` 按需修改（`.env*` 已被 gitignore，`.env.example` 除外）。

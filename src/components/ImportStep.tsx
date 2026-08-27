@@ -1,5 +1,6 @@
 import { useRef, useState, type DragEvent } from 'react';
 import Card from './ui/Card';
+import { APP_SUBTITLE, APP_TITLE } from '../app-config';
 
 export default function ImportStep({
   onFile, error,
@@ -28,8 +29,9 @@ export default function ImportStep({
 
   return (
     <Card>
-      <h1 className="text-xl font-semibold text-slate-800">珍珠生走访智能面谈辅助工具</h1>
-      <p className="mt-2 text-sm text-slate-500">
+      <h1 className="text-xl font-semibold text-slate-800">{APP_TITLE}</h1>
+      <p className="mt-2 text-sm font-medium text-slate-600">{APP_SUBTITLE}</p>
+      <p className="mt-1 text-sm text-slate-500">
         隐私优先：Excel 仅在当前浏览器本地处理，原始学生信息不会上传到任何服务器。
       </p>
       <div
