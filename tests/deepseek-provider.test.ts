@@ -37,11 +37,13 @@ const wireResponse = (ids: string[]) => ({
   })),
 });
 
-/** DeepSeek 响应壳（直连模式） */
-function deepseekResponse(content: string): Response {
+/** DeepSeek 响应壳（直连模式）；usage 可选（缺省 = 无 usage 字段） */
+function deepseekResponse(content: string, usage?: Record<string, unknown>): Response {
+  const shell: Record<string, unknown> = { choices: [{ message: { content } }] };
+  if (usage !== undefined) shell.usage = usage;
   return {
     ok: true, status: 200,
-    text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
+    text: async () => JSON.stringify(shell),
   } as Response;
 }
 
@@ -80,6 +82,8 @@ describe('DeepSeekAnalysisProvider', () => {
     const { provider, fetchMock } = makeProvider();
     const result = await provider.analyze(request);
     expect(result.students[0].studentId).toBe('student-001');
+    // 上游未返回 usage 时按 0 聚合（统计不失败，主流程不受影响）
+    expect(result.usage).toEqual({ apiCalls: 1, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(DEEPSEEK_API_URL);
@@ -191,6 +195,36 @@ describe('DeepSeekAnalysisProvider', () => {
 
     // schoolAnalysis 取首批
     expect(result.schoolAnalysis.studentCount).toBe(1);
+  });
+
+  it('多批 token 用量求和：15 人 → 2 批，usage 为各批之和', async () => {
+    const students15 = Array.from({ length: 15 }, (_, i) => ({
+      ...cleanStudent, anonymousId: `student-${String(i + 1).padStart(3, '0')}`,
+    }));
+    const request15: AnalysisRequest = { meta: request.meta, students: students15 };
+
+    // 动态回显 + 每批固定 usage：批 1 = 1000/400，批 2 = 600/200
+    let call = 0;
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
+      call += 1;
+      const body = JSON.parse(init.body);
+      const wire = JSON.parse(body.messages[1].content);
+      const ids = wire.students.map((s: { id: string }) => s.id);
+      const usage = call === 1
+        ? { prompt_tokens: 1000, completion_tokens: 400, prompt_cache_hit_tokens: 250 }
+        : { prompt_tokens: 600, completion_tokens: 200, prompt_cache_hit_tokens: 0 };
+      return Promise.resolve(deepseekResponse(JSON.stringify(wireResponse(ids)), usage));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new DeepSeekAnalysisProvider(
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
+    );
+
+    const result = await provider.analyze(request15);
+    expect(result.students).toHaveLength(15);
+    expect(result.usage).toEqual({
+      apiCalls: 2, promptTokens: 1600, completionTokens: 600, cacheHitTokens: 250,
+    });
   });
 
   it('分批中任一批安全扫描失败 → 整体失败（绝不部分发送后假装成功）', async () => {

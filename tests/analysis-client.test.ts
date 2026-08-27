@@ -40,12 +40,13 @@ const wireResponse = {
   }],
 };
 
-/** DeepSeek 响应壳：choices[0].message.content 为模型文本 */
-function okResponse(content: string, init: Partial<Response> = {}): Response {
+/** DeepSeek 响应壳：choices[0].message.content 为模型文本；usage 可选（缺省 = 无 usage 字段） */
+function okResponse(content: string, usage?: Record<string, unknown>): Response {
+  const shell: Record<string, unknown> = { choices: [{ message: { content } }] };
+  if (usage !== undefined) shell.usage = usage;
   return {
     ok: true, status: 200,
-    text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
-    ...init,
+    text: async () => JSON.stringify(shell),
   } as Response;
 }
 
@@ -64,7 +65,7 @@ describe('AnalysisClient', () => {
   it('2xx 合法响应 → 解析成功；端点/方法/头/消息体正确', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(wireResponse)));
     vi.stubGlobal('fetch', fetchMock);
-    const result = await client.analyze(payload);
+    const { result } = await client.analyze(payload);
     expect(result.schoolAnalysis.studentCount).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
@@ -119,8 +120,32 @@ describe('AnalysisClient', () => {
   it('模型文本带 markdown 围栏 → 修复后成功', async () => {
     const content = '好的，以下是分析结果：\n```json\n' + JSON.stringify(wireResponse) + '\n```';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(content)));
-    const result = await client.analyze(payload);
+    const { result } = await client.analyze(payload);
     expect(result.students[0].studentId).toBe('student-001');
+  });
+
+  it('usage 字段解析：prompt/completion/cache-hit 原样提取，apiCalls=1', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(
+      JSON.stringify(wireResponse),
+      { prompt_tokens: 1200, completion_tokens: 500, prompt_cache_hit_tokens: 300 },
+    )));
+    const { usage } = await client.analyze(payload);
+    expect(usage).toEqual({ apiCalls: 1, promptTokens: 1200, completionTokens: 500, cacheHitTokens: 300 });
+  });
+
+  it('usage 缺失或字段异常 → 按 0 处理，主流程不受影响', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(JSON.stringify(wireResponse))));
+    const first = await client.analyze(payload);
+    expect(first.usage).toEqual({ apiCalls: 1, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 });
+
+    // 字段类型错乱/负数/非有限值一律按 0，绝不抛错
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(
+      JSON.stringify(wireResponse),
+      { prompt_tokens: 'abc', completion_tokens: -5, prompt_cache_hit_tokens: Number.POSITIVE_INFINITY },
+    )));
+    const second = await client.analyze(payload);
+    expect(second.usage).toEqual({ apiCalls: 1, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 });
+    expect(second.result.students[0].studentId).toBe('student-001');
   });
 
   it('content 非 JSON 且修复失败 → 修正提示重试一次后仍失败 → format', async () => {
@@ -165,18 +190,20 @@ describe('AnalysisClient', () => {
     expect(second.messages[2].content).not.toContain('母亲');
   });
 
-  it('第一次结构校验失败（问题数不足）→ 第二次合法 → 返回结果（修复一次成功）', async () => {
+  it('第一次结构校验失败（问题数不足）→ 第二次合法 → 返回结果（修复一次成功），usage 跨重试累计', async () => {
     const bad = {
       ...wireResponse,
       students: [{ ...wireResponse.students[0], interviewQuestions: ['q1'] }],
     };
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(okResponse(JSON.stringify(bad)))
-      .mockResolvedValueOnce(okResponse(JSON.stringify(wireResponse)));
+      .mockResolvedValueOnce(okResponse(JSON.stringify(bad), { prompt_tokens: 100, completion_tokens: 50 }))
+      .mockResolvedValueOnce(okResponse(JSON.stringify(wireResponse), { prompt_tokens: 200, completion_tokens: 80 }));
     vi.stubGlobal('fetch', fetchMock);
-    const result = await client.analyze(payload);
+    const { result, usage } = await client.analyze(payload);
     expect(result.students[0].studentId).toBe('student-001');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 修复重试是另一次真实 API 调用、另一次计费：两次调用均计入
+    expect(usage).toEqual({ apiCalls: 2, promptTokens: 300, completionTokens: 130, cacheHitTokens: 0 });
   });
 
   it('超时阈值触发 AbortController（fake timers）', async () => {

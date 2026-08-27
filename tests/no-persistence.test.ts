@@ -27,11 +27,14 @@ const srcDir = fileURLToPath(new URL('../src', import.meta.url));
 const files = collectSourceFiles(srcDir);
 const relOf = (f: string) => relative(srcDir, f).split('\\').join('/');
 
-/** 全局禁止：持久化/第三方网络库/Node 全局/数据日志 */
+/** 全局禁止：持久化/第三方网络库/Node 全局/数据日志（localStorage 单独白名单，见下） */
 const FORBIDDEN_TOKENS = [
-  'localStorage', 'sessionStorage', 'indexedDB', 'document.cookie',
+  'sessionStorage', 'indexedDB', 'document.cookie',
   'axios', 'XMLHttpRequest', 'sendBeacon', 'WebSocket', 'process.',
 ];
+
+/** localStorage 唯一白名单文件（token 计数数字累计；用户对「无持久化」红线的唯一、有限放宽） */
+const LOCALSTORAGE_WHITELIST = new Set(['stats/token-usage-store.ts']);
 
 /** console 除 warn/error（仅 analysis/ 目录允许，见第三个 it）外全禁——
  *  正则负向前瞻杜绝 console.table/dir/group/count/time/assert 等数据日志方法漏网 */
@@ -63,6 +66,19 @@ describe('隐私红线静态守卫', () => {
       if (FORBIDDEN_CONSOLE_RE.test(content)) hits.push(`${relOf(f)}: console.<非warn/error>`);
     }
     expect(hits).toEqual([]);
+  });
+
+  it('localStorage 只允许出现在 stats/token-usage-store.ts（唯一持久化入口，仅存 token 数字）', () => {
+    const hits: string[] = [];
+    for (const f of files) {
+      const content = readFileSync(f, 'utf8');
+      if (content.includes('localStorage') && !LOCALSTORAGE_WHITELIST.has(relOf(f))) {
+        hits.push(relOf(f));
+      }
+    }
+    expect(hits).toEqual([]);
+    // 白名单文件自身必须存在（防整个模块被误删后测试空过）
+    expect(files.map(relOf)).toContain('stats/token-usage-store.ts');
   });
 
   it('fetch( 只允许出现在网络白名单文件（唯一网络出口）', () => {

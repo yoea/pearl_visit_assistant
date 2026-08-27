@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Report } from '../report/types';
-import type { StudentAnalysis } from '../analysis/provider';
+import type { StudentAnalysis, TokenUsage } from '../analysis/provider';
+import type { CumulativeTokenUsage } from '../stats/token-usage-store';
 import type { AnonymizedStudent } from '../types/student';
 import { reportToMarkdown } from '../report/markdown';
 import { reportToHtml } from '../report/html';
@@ -11,6 +12,11 @@ import Button from './ui/Button';
 import Badge from './ui/Badge';
 
 const IMPORTANCE_TONE: Record<string, string> = { high: 'amber', medium: 'blue', low: 'slate' };
+
+/** token 数字千分位格式化（仅展示用途） */
+function fmt(n: number): string {
+  return n.toLocaleString('zh-CN');
+}
 
 /** 轻量 CSS 条形图（无外部图表依赖，自包含） */
 function MiniBarChart({ items, color }: { items: { label: string; count: number }[]; color: string }) {
@@ -118,10 +124,12 @@ function StudentSection({ g, local }: {
 }
 
 export default function ReportStep({
-  report, nameIndex, onReset,
+  report, nameIndex, tokenStats, onReset,
 }: {
   report: Report;
   nameIndex: Map<string, string>;
+  /** 最近一次分析的 token 用量 + 本机累计（仅真实 AI；mock 为 null 不展示） */
+  tokenStats: { usage: TokenUsage; cumulative: CumulativeTokenUsage } | null;
   onReset: () => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -202,6 +210,36 @@ export default function ReportStep({
             <Button variant="secondary" onClick={onReset}>重新开始</Button>
           </div>
         </div>
+        {/* token 用量统计（仅真实 AI）：本次调用 + 本机累计，便于统计 API 消耗 */}
+        {tokenStats && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <p className="font-medium text-slate-600">本次 AI 调用用量</p>
+                <ul className="mt-1.5 space-y-0.5 text-slate-500">
+                  <li>· API 调用：{fmt(tokenStats.usage.apiCalls)} 次</li>
+                  <li>· 输入（提示词 + 匿名数据）：{fmt(tokenStats.usage.promptTokens)} tokens</li>
+                  <li>· 输出（生成报告）：{fmt(tokenStats.usage.completionTokens)} tokens</li>
+                  {tokenStats.usage.cacheHitTokens > 0 && (
+                    <li>· 其中输入缓存命中：{fmt(tokenStats.usage.cacheHitTokens)} tokens</li>
+                  )}
+                </ul>
+              </div>
+              <div>
+                <p className="font-medium text-slate-600">本机累计（仅存于本浏览器）</p>
+                <ul className="mt-1.5 space-y-0.5 text-slate-500">
+                  <li>· 累计分析：{fmt(tokenStats.cumulative.analyses)} 次</li>
+                  <li>· 累计输入：{fmt(tokenStats.cumulative.promptTokens)} tokens</li>
+                  <li>· 累计输出：{fmt(tokenStats.cumulative.completionTokens)} tokens</li>
+                  {tokenStats.cumulative.firstRecordedAt && (
+                    <li>· 首次记录于：{tokenStats.cumulative.firstRecordedAt.slice(0, 10)}</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+            <p className="mt-2 text-slate-400">仅统计 token 计数数字，不存储、不上传任何学生数据。</p>
+          </div>
+        )}
         {nameIndex.size > 0 && (
           <p className="mt-2 text-xs text-slate-400">下载文件含学生姓名，请妥善保管。</p>
         )}

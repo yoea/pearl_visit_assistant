@@ -3,6 +3,7 @@ import {
   type WireAnalysisRequest, type WireAnalysisResponse,
 } from './payload';
 import { DEEPSEEK_SYSTEM_PROMPT } from './system-prompt';
+import type { TokenUsage } from './provider';
 import type { ZodError } from 'zod';
 
 export type AnalysisErrorCategory =
@@ -62,13 +63,19 @@ const REPAIR_JSON_HINT = '你的上一轮输出无法解析为 JSON。请只输�
 export class AnalysisClient {
   constructor(private readonly config: AnalysisClientConfig) {}
 
-  async analyze(payload: WireAnalysisRequest): Promise<WireAnalysisResponse> {
+  async analyze(payload: WireAnalysisRequest): Promise<{ result: WireAnalysisResponse; usage: TokenUsage }> {
     const messages: ChatMessage[] = [
       { role: 'system', content: DEEPSEEK_SYSTEM_PROMPT },
       { role: 'user', content: JSON.stringify(payload) },
     ];
+    // 每次真实 API 调用都计入 apiCalls（JSON 修复重试是另一次调用、另一次计费）
+    const usage: TokenUsage = { apiCalls: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 };
     for (let attempt = 0; ; attempt++) {
-      const content = await this.requestContent(messages);
+      const { content, usage: attemptUsage } = await this.requestContent(messages);
+      usage.apiCalls += 1;
+      usage.promptTokens += attemptUsage.promptTokens;
+      usage.completionTokens += attemptUsage.completionTokens;
+      usage.cacheHitTokens += attemptUsage.cacheHitTokens;
       const raw = parseResponseText(content);
       if (raw === null) {
         if (attempt >= 1) throw new AnalysisClientError('format');
@@ -76,14 +83,14 @@ export class AnalysisClient {
         continue;
       }
       const parsed = wireResponseSchema.safeParse(raw);
-      if (parsed.success) return parsed.data;
+      if (parsed.success) return { result: parsed.data, usage };
       if (attempt >= 1) throw new AnalysisClientError('format');
       messages.push({ role: 'user', content: correctionHint(parsed.error) });
     }
   }
 
-  /** 单次请求：超时 → 状态码分类 → 响应壳提取。返回模型文本；异常一律按七分类抛出。 */
-  private async requestContent(messages: ChatMessage[]): Promise<string> {
+  /** 单次请求：超时 → 状态码分类 → 响应壳提取。返回模型文本与该次调用 token 用量；异常一律按七分类抛出。 */
+  private async requestContent(messages: ChatMessage[]): Promise<{ content: string; usage: TokenUsage }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
     let response: Response;
@@ -127,14 +134,31 @@ export class AnalysisClient {
       throw new AnalysisClientError('network');
     }
 
-    // DeepSeek 响应壳：{ choices: [{ message: { content: <模型文本> } }] }
+    // DeepSeek 响应壳：{ choices: [{ message: { content: <模型文本> } }], usage: { prompt_tokens, ... } }
+    // usage 为计费依据（仅数字）；缺失时按 0 处理（绝不因统计失败影响主流程）
     let content: string;
+    let usage: TokenUsage = { apiCalls: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 };
     try {
-      content = JSON.parse(text).choices?.[0]?.message?.content;
+      const shell = JSON.parse(text);
+      content = shell.choices?.[0]?.message?.content;
+      const u = shell.usage;
+      if (u && typeof u === 'object') {
+        usage = {
+          apiCalls: 0,
+          promptTokens: finiteNonNeg(u.prompt_tokens),
+          completionTokens: finiteNonNeg(u.completion_tokens),
+          cacheHitTokens: finiteNonNeg(u.prompt_cache_hit_tokens),
+        };
+      }
     } catch {
       throw new AnalysisClientError('format');
     }
     if (typeof content !== 'string' || !content) throw new AnalysisClientError('format');
-    return content;
+    return { content, usage };
   }
+}
+
+/** 安全取数：仅接受有限非负数，否则按 0（usage 缺失/异常绝不抛错） */
+function finiteNonNeg(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0;
 }

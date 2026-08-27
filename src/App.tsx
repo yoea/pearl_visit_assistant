@@ -9,6 +9,8 @@ import { createAnalysisService } from './analysis/provider-factory';
 import { AnalysisClientError, SecurityViolationError } from './analysis/analysis-service';
 import { generateReport } from './report/generator';
 import { InMemoryUsageStats } from './stats/usage-stats';
+import { recordTokenUsage, type CumulativeTokenUsage } from './stats/token-usage-store';
+import type { TokenUsage } from './analysis/provider';
 import type { MappedColumn, RawStudentRecord } from './types/student';
 import type { ParsedState, Stage } from './types/pipeline';
 import Stepper from './components/Stepper';
@@ -33,6 +35,10 @@ export default function App() {
   const [importError, setImportError] = useState<string | undefined>();
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | undefined>();
+  // 最近一次分析的 token 用量 + 本机累计快照（仅真实 AI；mock 为 null 不展示）
+  const [tokenStats, setTokenStats] = useState<{
+    usage: TokenUsage; cumulative: CumulativeTokenUsage;
+  } | null>(null);
   const metaRef = useRef<{ schoolName: string; cohort: string }>({ schoolName: '', cohort: '' });
   const nameBlacklistRef = useRef<Set<string>>(new Set());
   const mappingRef = useRef<MappedColumn[]>([]);
@@ -99,6 +105,12 @@ export default function App() {
       const result = await analysisService.analyze(request, nameBlacklistRef.current);
       const report = generateReport(result, metaRef.current, new Date(), state.output.students);
       usageStats.record('analysisSucceeded');
+      // token 累计：仅真实 AI 有 usage；本机持久化只存计数数字（见 token-usage-store 白名单）
+      setTokenStats(
+        result.usage
+          ? { usage: result.usage, cumulative: recordTokenUsage(result.usage) }
+          : null,
+      );
       dispatch({
         type: 'ANALYSIS_SUCCEEDED',
         output: state.output,
@@ -132,6 +144,7 @@ export default function App() {
     metaRef.current = { schoolName: '', cohort: '' };
     setImportError(undefined);
     setAnalyzeError(undefined);
+    setTokenStats(null);
     dispatch({ type: 'RESET' });
   }, []);
 
@@ -173,7 +186,12 @@ export default function App() {
           />
         )}
         {!showHelp && state.stage === 'analyzed' && (
-          <ReportStep report={state.report} nameIndex={state.output.nameIndex} onReset={handleReset} />
+          <ReportStep
+            report={state.report}
+            nameIndex={state.output.nameIndex}
+            tokenStats={tokenStats}
+            onReset={handleReset}
+          />
         )}
       </main>
     </div>

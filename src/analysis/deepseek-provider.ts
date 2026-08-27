@@ -5,7 +5,7 @@ import {
   createAnalysisPayload, scanOutboundPayload,
   type WireAnalysisResponse,
 } from './payload';
-import type { AnalysisProvider, AnalysisResult } from './provider';
+import type { AnalysisProvider, AnalysisResult, TokenUsage } from './provider';
 import type { AnalysisRequest } from '../types/student';
 
 /** 分批参数：单批学生数（输出 8000 token 上限内的安全余量）与并行请求数 */
@@ -93,11 +93,21 @@ export class DeepSeekAnalysisProvider implements AnalysisProvider {
 
     // 汇总：students 按批序合并；schoolAnalysis 取首批（基于首批学生视角的学校级归纳）
     const wire: WireAnalysisResponse = {
-      ...results[0],
-      students: results.flatMap((r) => r.students),
+      ...results[0].result,
+      students: results.flatMap((r) => r.result.students),
     };
     assertStudentMatch(request, wire);
+    // token 用量：各批（含批内重试）求和，供统计与本地累计
+    const usage: TokenUsage = results.reduce(
+      (sum, r) => ({
+        apiCalls: sum.apiCalls + r.usage.apiCalls,
+        promptTokens: sum.promptTokens + r.usage.promptTokens,
+        completionTokens: sum.completionTokens + r.usage.completionTokens,
+        cacheHitTokens: sum.cacheHitTokens + r.usage.cacheHitTokens,
+      }),
+      { apiCalls: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 } satisfies TokenUsage,
+    );
     // wire 响应经 zod 校验后形状与领域结构一致（契约同构），直接作为分析结果
-    return wire;
+    return { ...wire, usage };
   }
 }
