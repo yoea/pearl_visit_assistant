@@ -72,7 +72,7 @@ npm test           # 运行全部测试
 
 ### 使用统计上报（可选）
 
-配置 `VITE_USAGE_REPORT_URL` 后，打开工具 / 分析成功 / 分析失败时会向该接口
+配置 `VITE_USAGE_REPORT_URL` 后，打开工具 / 分析成功 / 分析失败时会向该接口（与页面同服务器同端口，路由 `/api/usage`）
 POST **白名单计数**（工具名、版本、随机浏览器 ID、事件、学生人数、token 数字），
 **绝不包含任何学生数据**；未配置则完全不发送。接口契约见
 [`docs/usage-report-api.md`](docs/usage-report-api.md)（供后端实现）。

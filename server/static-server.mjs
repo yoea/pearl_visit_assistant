@@ -11,6 +11,7 @@ import http from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, join, normalize, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sanitize, parseRecords, summarize, statsHtml, appendUsage, readUsageText } from './usage-core.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -65,6 +66,50 @@ function serveStatic(req, res) {
 }
 
 const server = http.createServer((req, res) => {
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+
+  // 使用统计：上报接口 + 统计页面（逻辑见 usage-core.mjs，白名单计数，无学生数据）
+  if (req.method === 'POST' && url.pathname === '/api/usage') {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; if (raw.length > 64 * 1024) req.destroy(); });
+    req.on('end', () => {
+      let body;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'invalid_json' }));
+        return;
+      }
+      const clean = sanitize(body);
+      if (!clean) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'invalid_payload' }));
+        return;
+      }
+      if (!appendUsage(clean)) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'storage_error' }));
+        return;
+      }
+      res.writeHead(204);
+      res.end();
+    });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/stats') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(statsHtml(summarize(parseRecords(readUsageText()))));
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   if (req.method === 'GET' || req.method === 'HEAD') {
     serveStatic(req, res);
     return;

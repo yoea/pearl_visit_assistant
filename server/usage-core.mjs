@@ -1,17 +1,14 @@
 /**
- * 使用情况统计服务（零依赖，Node 18+，风格同 static-server.mjs）。
+ * 使用情况统计核心逻辑（零依赖，Node 18+）——被 static-server.mjs 复用。
  *
  * 职责：
  *  - POST /api/usage   接收前端上报（见 docs/usage-report-api.md），白名单校验后
  *                      追加到 server/data/usage.jsonl（JSON Lines，数据量小，无需数据库）
  *  - GET  /stats       汇总统计页面（打开次数/分析数/token 总量/去重用户/每日趋势）
- *  - GET  /health      存活检查
  *
  * 隐私：只持久化前端白名单计数（工具名/版本/随机ID/事件/数字），绝不存储学生数据。
- * 启动：USAGE_PORT=5001 node server/usage-server.mjs
  */
 
-import { createServer } from 'node:http';
 import {
   appendFileSync, existsSync, mkdirSync, readFileSync,
 } from 'node:fs';
@@ -19,9 +16,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(ROOT, 'data');
-const DATA_FILE = join(DATA_DIR, 'usage.jsonl');
-const PORT = Number(process.env.USAGE_PORT || 5001);
+export const DATA_DIR = join(ROOT, 'data');
+export const DATA_FILE = join(DATA_DIR, 'usage.jsonl');
 
 /** 白名单字段：丢弃上报中任何未知字段（防脏数据/防误存学生数据） */
 const EVENT_WHITELIST = new Set(['open', 'analysis_succeeded', 'analysis_failed']);
@@ -52,7 +48,7 @@ export function sanitize(body) {
   const p = body.payload;
   out.payload = {};
   if (typeof p === 'object' && p !== null) {
-    if (PAYLOAD_WHITELIST.has('students') && p.students !== undefined) {
+    if (p.students !== undefined) {
       const n = num(p.students);
       if (n !== undefined) out.payload.students = n;
     }
@@ -134,17 +130,9 @@ export function summarize(records) {
   };
 }
 
-function json(res, code, data) {
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify(data));
-}
-
 /** 统计页面（内联 HTML，浅色简洁风） */
-function statsHtml(s) {
+export function statsHtml(s) {
   const fmt = (n) => n.toLocaleString('zh-CN');
-  const trendRows = s.trend.length > 0
-    ? s.trend.map((t) => `<tr><td>${t.date}</td><td>${fmt(t.count)}</td></tr>`).join('')
-    : '<tr><td colspan="2">暂无数据</td></tr>';
   const maxTrend = Math.max(1, ...s.trend.map((t) => t.count));
   const bars = s.trend.map((t) =>
     `<tr><td class="d">${t.date}</td><td class="bar"><span style="width:${((t.count / maxTrend) * 100).toFixed(1)}%">${t.count}</span></td></tr>`).join('');
@@ -196,54 +184,18 @@ function statsHtml(s) {
 </div></body></html>`;
 }
 
-const server = createServer((req, res) => {
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-
-  if (req.method === 'GET' && url.pathname === '/health') {
-    json(res, 200, { ok: true });
-    return;
+/** 追加一条已清洗的上报记录到 JSONL；失败返回 false（绝不抛错） */
+export function appendUsage(clean) {
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    appendFileSync(DATA_FILE, JSON.stringify(clean) + '\n', 'utf8');
+    return true;
+  } catch {
+    return false;
   }
+}
 
-  if (req.method === 'GET' && url.pathname === '/stats') {
-    const text = existsSync(DATA_FILE) ? readFileSync(DATA_FILE, 'utf8') : '';
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(statsHtml(summarize(parseRecords(text))));
-    return;
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/usage') {
-    let raw = '';
-    req.on('data', (chunk) => { raw += chunk; if (raw.length > 64 * 1024) req.destroy(); });
-    req.on('end', () => {
-      let body;
-      try {
-        body = JSON.parse(raw);
-      } catch {
-        json(res, 400, { error: 'invalid json' });
-        return;
-      }
-      const clean = sanitize(body);
-      if (!clean) {
-        json(res, 400, { error: 'invalid payload' });
-        return;
-      }
-      try {
-        if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-        appendFileSync(DATA_FILE, JSON.stringify(clean) + '\n', 'utf8');
-        json(res, 204, {});
-      } catch {
-        json(res, 500, { error: 'storage error' });
-      }
-    });
-    return;
-  }
-
-  json(res, 404, { error: 'not found' });
-});
-
-server.listen(PORT, () => {
-  console.log(`使用统计服务已启动: http://localhost:${PORT}/`);
-  console.log(`  上报接口: POST http://localhost:${PORT}/api/usage`);
-  console.log(`  统计页面: http://localhost:${PORT}/stats`);
-  console.log(`  数据文件: ${DATA_FILE}`);
-});
+/** 读取全部记录文本（文件不存在返回空串） */
+export function readUsageText() {
+  return existsSync(DATA_FILE) ? readFileSync(DATA_FILE, 'utf8') : '';
+}

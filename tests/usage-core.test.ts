@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitize, parseRecords, summarize } from '../server/usage-server.mjs';
+import { sanitize, parseRecords, summarize } from '../server/usage-core.mjs';
 
 const validBody = {
   tool: 'pearl-visit-assistant',
@@ -14,7 +14,7 @@ const validBody = {
   },
 };
 
-describe('usage-server（白名单清洗 + 汇总）', () => {
+describe('usage-core（白名单清洗 + 汇总）', () => {
   it('合法上报：保留白名单字段，丢弃未知字段（防脏数据/防误存学生数据）', () => {
     const dirty = {
       ...validBody,
