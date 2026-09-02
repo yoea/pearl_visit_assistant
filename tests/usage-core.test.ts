@@ -79,6 +79,33 @@ describe('usage-core（白名单清洗 + 汇总）', () => {
     ]);
   });
 
+  it('summarize：下载（MD/HTML 分开）与搜索计数', () => {
+    const records = parseRecords([
+      JSON.stringify({ ...validBody, clientId: 'a', event: 'report_downloaded', payload: { format: 'markdown' } }),
+      JSON.stringify({ ...validBody, clientId: 'a', event: 'report_downloaded', payload: { format: 'markdown' } }),
+      JSON.stringify({ ...validBody, clientId: 'a', event: 'report_downloaded', payload: { format: 'html' } }),
+      JSON.stringify({ ...validBody, clientId: 'b', event: 'student_search' }),
+      JSON.stringify({ ...validBody, clientId: 'b', event: 'student_search' }),
+      JSON.stringify({ ...validBody, clientId: 'b', event: 'student_search' }),
+    ].join('\n'));
+    const s = summarize(records);
+    expect(s.mdDownloads).toBe(2);
+    expect(s.htmlDownloads).toBe(1);
+    expect(s.searches).toBe(3);
+  });
+
+  it('sanitize：format 白名单（非法格式丢弃）', () => {
+    const ok = sanitize({ ...validBody, event: 'report_downloaded', payload: { format: 'pdf' } });
+    expect(ok).not.toBeNull();
+    expect((ok as Record<string, unknown>).payload).toEqual({});
+    const ok2 = sanitize({ ...validBody, event: 'report_downloaded', payload: { format: 'html' } });
+    expect((ok2 as Record<string, unknown>).payload).toEqual({ format: 'html' });
+    // student_search 不携带 payload 字段
+    const s = sanitize({ ...validBody, event: 'student_search', payload: { query: '张三' } });
+    expect(JSON.stringify(s)).not.toContain('张三');
+    expect((s as Record<string, unknown>).payload).toEqual({});
+  });
+
   it('summarize：空记录不崩溃', () => {
     const s = summarize([]);
     expect(s.opens).toBe(0);

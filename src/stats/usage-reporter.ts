@@ -12,7 +12,9 @@ import type { CumulativeTokenUsage } from './token-usage-store';
  * 网络出口白名单：no-persistence 静态守卫锁定本文件为唯一统计上报出口。
  */
 
-export type UsageEvent = 'open' | 'analysis_succeeded' | 'analysis_failed';
+export type UsageEvent =
+  | 'open' | 'analysis_succeeded' | 'analysis_failed'
+  | 'report_downloaded' | 'student_search';
 
 /** 上报请求体（接口契约见 docs/usage-report-api.md，全部字段为白名单） */
 export interface UsageReport {
@@ -29,6 +31,8 @@ export interface UsageReport {
     students?: number;
     /** 失败类别枚举名（仅 analysis_failed；非错误原文） */
     errorCategory?: string;
+    /** 下载格式（仅 report_downloaded：'markdown' | 'html'） */
+    format?: 'markdown' | 'html';
     /** 本次分析 token 用量（仅 analysis_succeeded 且真实 AI） */
     usage?: {
       apiCalls: number;
@@ -141,4 +145,14 @@ export function reportAnalysisSucceeded(
 /** 分析失败（仅类别枚举名，非错误原文） */
 export function reportAnalysisFailed(version: string, errorCategory: string): void {
   send({ tool: TOOL, version, clientId: clientId(), event: 'analysis_failed', occurredAt: new Date().toISOString(), payload: { errorCategory } });
+}
+
+/** 下载报告（Markdown / HTML 分开计数） */
+export function reportReportDownloaded(version: string, format: 'markdown' | 'html'): void {
+  send({ tool: TOOL, version, clientId: clientId(), event: 'report_downloaded', occurredAt: new Date().toISOString(), payload: { format } });
+}
+
+/** 学生搜索（本地查找：输入停顿后计一次；绝不上报搜索词——搜索词即学生姓名） */
+export function reportStudentSearch(version: string): void {
+  send({ tool: TOOL, version, clientId: clientId(), event: 'student_search', occurredAt: new Date().toISOString(), payload: {} });
 }

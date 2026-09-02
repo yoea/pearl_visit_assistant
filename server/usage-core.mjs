@@ -20,9 +20,12 @@ export const DATA_DIR = join(ROOT, 'data');
 export const DATA_FILE = join(DATA_DIR, 'usage.jsonl');
 
 /** 白名单字段：丢弃上报中任何未知字段（防脏数据/防误存学生数据） */
-const EVENT_WHITELIST = new Set(['open', 'analysis_succeeded', 'analysis_failed']);
+const EVENT_WHITELIST = new Set([
+  'open', 'analysis_succeeded', 'analysis_failed', 'report_downloaded', 'student_search',
+]);
 const TOP_WHITELIST = ['tool', 'version', 'clientId', 'event', 'occurredAt', 'payload'];
-const PAYLOAD_WHITELIST = new Set(['students', 'errorCategory', 'usage', 'cumulative']);
+const PAYLOAD_WHITELIST = new Set(['students', 'errorCategory', 'usage', 'cumulative', 'format']);
+const FORMAT_WHITELIST = new Set(['markdown', 'html']);
 const USAGE_WHITELIST = ['apiCalls', 'promptTokens', 'completionTokens', 'cacheHitTokens'];
 const CUM_WHITELIST = ['analyses', 'promptTokens', 'completionTokens', 'totalTokens'];
 
@@ -55,6 +58,7 @@ export function sanitize(body) {
     if (p.errorCategory !== undefined && typeof p.errorCategory === 'string') {
       out.payload.errorCategory = p.errorCategory;
     }
+    if (FORMAT_WHITELIST.has(p.format)) out.payload.format = p.format;
     if (p.usage && typeof p.usage === 'object') {
       const u = {};
       for (const k of USAGE_WHITELIST) {
@@ -94,6 +98,7 @@ export function parseRecords(text) {
 /** 汇总统计（纯函数，供 /stats 与测试复用） */
 export function summarize(records) {
   let opens = 0, succeeded = 0, failed = 0;
+  let mdDownloads = 0, htmlDownloads = 0, searches = 0;
   let promptTokens = 0, completionTokens = 0, cacheHitTokens = 0;
   let totalStudents = 0;
   const clients = new Set();
@@ -114,6 +119,10 @@ export function summarize(records) {
         cacheHitTokens += num(p.usage.cacheHitTokens) ?? 0;
       }
     } else if (r.event === 'analysis_failed') failed += 1;
+    else if (r.event === 'report_downloaded') {
+      if (p.format === 'html') htmlDownloads += 1;
+      else mdDownloads += 1;
+    } else if (r.event === 'student_search') searches += 1;
   }
 
   const trend = [...daily.entries()]
@@ -122,6 +131,7 @@ export function summarize(records) {
 
   return {
     opens, succeeded, failed, totalStudents,
+    mdDownloads, htmlDownloads, searches,
     promptTokens, completionTokens, cacheHitTokens,
     totalTokens: promptTokens + completionTokens,
     uniqueClients: clients.size,
@@ -165,6 +175,9 @@ export function statsHtml(s) {
     <div class="card"><div class="n">${fmt(s.uniqueClients)}</div><div class="l">使用人数（按浏览器）</div></div>
     <div class="card"><div class="n">${fmt(s.totalStudents)}</div><div class="l">累计分析学生数</div></div>
     <div class="card"><div class="n">${fmt(s.totalTokens)}</div><div class="l">token 总量（输入+输出）</div></div>
+    <div class="card"><div class="n">${fmt(s.mdDownloads)}</div><div class="l">Markdown 下载次数</div></div>
+    <div class="card"><div class="n">${fmt(s.htmlDownloads)}</div><div class="l">HTML 下载次数</div></div>
+    <div class="card"><div class="n">${fmt(s.searches)}</div><div class="l">学生搜索次数</div></div>
   </div>
   <h2>token 用量明细</h2>
   <table><tr><th>类型</th><th>数值</th></tr>

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  reportOpen, reportAnalysisSucceeded, reportAnalysisFailed, type UsageReport,
+  reportOpen, reportAnalysisSucceeded, reportAnalysisFailed,
+  reportReportDownloaded, reportStudentSearch, type UsageReport,
 } from '../src/stats/usage-reporter';
 
 function makeStorage() {
@@ -34,9 +35,10 @@ const cumulative = {
   totalTokens: 1300, cacheHitTokens: 150, firstRecordedAt: 'x', lastRecordedAt: 'y',
 };
 
-/** 解析 beacon 发送的 body */
+/** 解析 beacon 最近一次发送的 body */
 async function beaconBody(): Promise<UsageReport> {
-  const arg = beaconMock.mock.calls[0][1] as Blob;
+  const calls = beaconMock.mock.calls;
+  const arg = calls[calls.length - 1][1] as Blob;
   const text = await arg.text();
   return JSON.parse(text) as UsageReport;
 }
@@ -98,6 +100,22 @@ describe('usage-reporter（白名单计数上报）', () => {
     const id1 = (await beaconBody()).clientId;
     const id2 = (await beaconBody()).clientId;
     expect(id1).toBe(id2);
+  });
+
+  it('report_downloaded：MD/HTML 分开计数（format 字段）', async () => {
+    vi.stubEnv('VITE_USAGE_REPORT_URL', 'https://stats.example.com/usage');
+    reportReportDownloaded('v1.1.0', 'markdown');
+    expect((await beaconBody()).payload).toEqual({ format: 'markdown' });
+    reportReportDownloaded('v1.1.0', 'html');
+    expect((await beaconBody()).payload).toEqual({ format: 'html' });
+  });
+
+  it('student_search：payload 为空（绝不上报搜索词）', async () => {
+    vi.stubEnv('VITE_USAGE_REPORT_URL', 'https://stats.example.com/usage');
+    reportStudentSearch('v1.1.0');
+    const body = await beaconBody();
+    expect(body.event).toBe('student_search');
+    expect(body.payload).toEqual({});
   });
 
   it('sendBeacon 不可用时回退 fetch；上报异常静默不抛错', () => {

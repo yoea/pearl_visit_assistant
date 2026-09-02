@@ -14,6 +14,8 @@
   - `open`：用户每次打开工具页面（一次）
   - `analysis_succeeded`：每次 AI 分析成功（含 token 用量）
   - `analysis_failed`：每次 AI 分析失败（含失败类别）
+  - `report_downloaded`：下载报告（`payload.format` = `markdown` | `html`，分开计数）
+  - `student_search`：本地查找学生（输入停顿计一次；**绝不上报搜索词**，搜索词即学生姓名）
 - 发送方式：`navigator.sendBeacon`（回退 `fetch keepalive`），`Content-Type: application/json`。
 - 失败处理：前端**不重试、不阻塞**，丢包即弃——后端按尽力而为处理即可。
 
@@ -53,7 +55,12 @@ POST {VITE_USAGE_REPORT_URL}
     },
 
     // analysis_failed：
-    "errorCategory": "timeout"              // network | timeout | configuration | rate-limited | server | format | security | unknown
+    "errorCategory": "timeout",             // network | timeout | configuration | rate-limited | server | format | security | unknown
+
+    // report_downloaded：
+    "format": "markdown"                    // markdown | html（分开计数）
+
+    // student_search：payload 为空（搜索词即学生姓名，绝不上报）
   }
 }
 ```
@@ -65,6 +72,8 @@ POST {VITE_USAGE_REPORT_URL}
 | `open` | 无 | 打开工具计数 |
 | `analysis_succeeded` | `students` / `usage` / `cumulative` | 分析成功计数 + 本次/累计 token |
 | `analysis_failed` | `errorCategory` | 失败计数 + 类别（枚举名，非错误原文） |
+| `report_downloaded` | `format` | 下载计数（`markdown` / `html` 分开） |
+| `student_search` | 无 | 学生搜索计数（绝不上报搜索词） |
 
 ## 存储建议
 

@@ -12,7 +12,7 @@ import { InMemoryUsageStats } from './stats/usage-stats';
 import { recordTokenUsage, type CumulativeTokenUsage } from './stats/token-usage-store';
 import { saveReport, loadReport, deleteReport } from './stats/report-store';
 import { reportOpen, reportAnalysisSucceeded, reportAnalysisFailed, usageStatsUrl } from './stats/usage-reporter';
-import { APP_TITLE } from './app-config';
+import { APP_TITLE, APP_VERSION } from './app-config';
 import type { TokenUsage } from './analysis/provider';
 import type { MappedColumn, RawStudentRecord } from './types/student';
 import type { ParsedState, Stage } from './types/pipeline';
@@ -27,9 +27,6 @@ import HelpPage from './components/HelpPage';
 const usageStats = new InMemoryUsageStats();
 // provider 种类由环境变量决定（mock 默认 / real），网络 provider 仅工厂内部构造
 const analysisService = createAnalysisService();
-
-/** 版本标签：与 git tag / package.json version 保持同步 */
-const APP_VERSION = 'v1.1.0';
 
 /** 阶段 → 步骤条序号（与 Stage 联合类型编译期锁定，漏配即报错） */
 const STAGE_TO_STEP: Record<Stage, number> = {

@@ -8,6 +8,8 @@ import { reportToHtml } from '../report/html';
 import { downloadTextFile } from '../utils/download';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeric-validation';
+import { APP_VERSION } from '../app-config';
+import { reportReportDownloaded, reportStudentSearch } from '../stats/usage-reporter';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Badge from './ui/Badge';
@@ -230,6 +232,13 @@ export default function ReportStep({
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [archived]);
 
+  // 学生搜索计数：输入停顿 800ms 计一次（绝不上报搜索词——搜索词即学生姓名）
+  useEffect(() => {
+    if (query.trim() === '') return;
+    const t = setTimeout(() => reportStudentSearch(APP_VERSION), 800);
+    return () => clearTimeout(t);
+  }, [query]);
+
   /** 打开学生信息模态框（存在该生才打开） */
   const openStudent = (id: string | null) => {
     if (id && report.students.some((s) => s.studentId === id)) setModalId(id);
@@ -262,12 +271,14 @@ export default function ReportStep({
     const md = reportToMarkdown(report, nameIndex);
     const date = report.generatedAt.slice(0, 10);
     downloadTextFile(`走访参考报告-${report.schoolName}-${date}.md`, md, 'text/markdown;charset=utf-8');
+    reportReportDownloaded(APP_VERSION, 'markdown');
   };
 
   const downloadHtml = () => {
     const html = reportToHtml(report, nameIndex);
     const date = report.generatedAt.slice(0, 10);
     downloadTextFile(`走访参考报告-${report.schoolName}-${date}.html`, html, 'text/html;charset=utf-8');
+    reportReportDownloaded(APP_VERSION, 'html');
   };
 
   const sa = report.schoolAnalysis;

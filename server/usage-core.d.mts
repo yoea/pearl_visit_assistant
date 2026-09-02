@@ -9,6 +9,9 @@ export function summarize(records: Array<Record<string, unknown>>): {
   succeeded: number;
   failed: number;
   totalStudents: number;
+  mdDownloads: number;
+  htmlDownloads: number;
+  searches: number;
   promptTokens: number;
   completionTokens: number;
   cacheHitTokens: number;
