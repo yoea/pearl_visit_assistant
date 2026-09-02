@@ -64,10 +64,18 @@ npm test           # 运行全部测试
 | `VITE_ANALYSIS_TIMEOUT_MS` | 请求超时毫秒数 | `60000` |
 | `VITE_APP_TITLE` | 页面标题（浏览器标签页/页眉/首页） | `珍珠生走访审核辅助平台` |
 | `VITE_APP_SUBTITLE` | 副标题（功能说明，首页标题下方） | 见 `.env.example` |
+| `VITE_USAGE_REPORT_URL` | 使用统计上报接口（可选；未配置则完全不发送） | 空 |
 
 - `real` 但未配置 Key 时自动回退 Mock 并在控制台提示。
 - 可复制 `.env.example` 为 `.env` 按需修改（`.env*` 已被 gitignore，`.env.example` 除外）。
 - 改动标题/副标题后需重新构建才生效。
+
+### 使用统计上报（可选）
+
+配置 `VITE_USAGE_REPORT_URL` 后，打开工具 / 分析成功 / 分析失败时会向该接口
+POST **白名单计数**（工具名、版本、随机浏览器 ID、事件、学生人数、token 数字），
+**绝不包含任何学生数据**；未配置则完全不发送。接口契约见
+[`docs/usage-report-api.md`](docs/usage-report-api.md)（供后端实现）。
 
 ## 发送前确认（安全红线）
 

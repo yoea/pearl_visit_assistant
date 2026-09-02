@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { pipelineReducer } from './state/pipeline';
 import { parseExcel } from './excel/excel-parser';
 import { mapFields } from './anonymization/field-mapper';
@@ -11,6 +11,7 @@ import { generateReport } from './report/generator';
 import { InMemoryUsageStats } from './stats/usage-stats';
 import { recordTokenUsage, type CumulativeTokenUsage } from './stats/token-usage-store';
 import { saveReport, loadReport, deleteReport } from './stats/report-store';
+import { reportOpen, reportAnalysisSucceeded, reportAnalysisFailed, usageStatsUrl } from './stats/usage-reporter';
 import { APP_TITLE } from './app-config';
 import type { TokenUsage } from './analysis/provider';
 import type { MappedColumn, RawStudentRecord } from './types/student';
@@ -37,6 +38,10 @@ const STAGE_TO_STEP: Record<Stage, number> = {
 
 export default function App() {
   const [state, dispatch] = useReducer(pipelineReducer, { stage: 'idle' });
+  // 使用统计：打开工具上报一次（白名单计数，未配置接口地址时静默）
+  useEffect(() => {
+    reportOpen(APP_VERSION);
+  }, []);
   // 帮助页视图：仅切换显示层，不影响流水线状态（帮助页返回后原进度原样保留）
   const [showHelp, setShowHelp] = useState(false);
   const [importError, setImportError] = useState<string | undefined>();
@@ -119,11 +124,14 @@ export default function App() {
       const report = generateReport(result, metaRef.current, new Date(), state.output.students);
       usageStats.record('analysisSucceeded');
       // token 累计：仅真实 AI 有 usage；本机持久化只存计数数字（见 token-usage-store 白名单）
+      const cumulative = result.usage ? recordTokenUsage(result.usage) : undefined;
       setTokenStats(
-        result.usage
-          ? { usage: result.usage, cumulative: recordTokenUsage(result.usage) }
+        result.usage && cumulative
+          ? { usage: result.usage, cumulative }
           : null,
       );
+      // 使用统计上报：分析成功（学生数 + token 用量；仅白名单计数，绝无学生数据）
+      reportAnalysisSucceeded(APP_VERSION, state.output.students.length, result.usage, cumulative);
       // 报告自动存档到本浏览器（含姓名映射，仅本机；30 天未访问自动过期）
       const saved = saveReport(report, state.output.nameIndex);
       if (saved.ok) {
@@ -157,6 +165,8 @@ export default function App() {
           ? e.message
           : 'AI 分析失败，请重试。',
       );
+      // 使用统计上报：分析失败（仅类别枚举名）
+      reportAnalysisFailed(APP_VERSION, category);
     } finally {
       setAnalyzing(false);
     }
@@ -319,6 +329,18 @@ export default function App() {
           </nav>
           <p className="mt-2 text-center text-xs text-slate-400">
             Copyright © 新华教育基金会 All Rights Reserved.
+            {/* 不明显的使用统计入口：仅配置了上报接口时显示 */}
+            {usageStatsUrl() && (
+              <a
+                href={usageStatsUrl()!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-3 text-slate-300 hover:text-slate-500"
+                title="使用情况统计"
+              >
+                使用统计
+              </a>
+            )}
           </p>
         </div>
       </footer>
