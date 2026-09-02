@@ -158,6 +158,9 @@ describe('ReportStep（本地查找 + 模态框 + 成功动画）', () => {
     const input = screen.getByPlaceholderText(/输入学生姓名的一部分/);
     fireEvent.change(input, { target: { value: '王小明' } });
     fireEvent.click(within(screen.getByRole('listbox')).getByText('王小明'));
+    // 基本情况默认折叠：先展开（模态框渲染在 DOM 末尾，取最后一个「展开」）
+    const expandBtns = screen.getAllByText('展开');
+    fireEvent.click(expandBtns[expandBtns.length - 1]);
     // 异常值（人均年收入 0.2 元）被标注
     expect(screen.getByText('人均年收入(元)')).toBeTruthy();
     expect(screen.getByText('0.2')).toBeTruthy();
@@ -177,6 +180,9 @@ describe('ReportStep（本地查找 + 模态框 + 成功动画）', () => {
     const input = screen.getByPlaceholderText(/输入学生姓名的一部分/);
     fireEvent.change(input, { target: { value: '李四' } });
     fireEvent.click(within(screen.getByRole('listbox')).getByText('李四'));
+    // 基本情况默认折叠：先展开（模态框在 DOM 末尾，取最后一个「展开」）
+    const expandBtns = screen.getAllByText('展开');
+    fireEvent.click(expandBtns[expandBtns.length - 1]);
     // 三个异常字段各一个标签
     expect(screen.getByText('1.65')).toBeTruthy();
     expect(screen.getByText('105')).toBeTruthy();

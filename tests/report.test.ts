@@ -160,6 +160,39 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(html).not.toContain('建议淘汰');
   });
 
+  it('HTML 学生明细为卡片化布局（编号问题圆点/重点困难条/因素小卡）', async () => {
+    const result = await new MockAnalysisProvider().analyze({
+      meta, students: [sampleStudent],
+    } satisfies AnalysisRequest);
+    const html = reportToHtml(generateReport(result, meta, now, [sampleStudent]));
+    expect(html).toContain('class="questions"');
+    expect(html).toContain('class="num"'); // 问题编号圆点
+    expect(html).toContain('class="factor"'); // 困难因素小卡
+    expect(html).toContain('class="textcard"'); // 文本卡片
+    expect(html).toContain('class="card-warn"'); // 红色核实卡
+    expect(html).toContain('class="tc-icon"'); // 文本卡片带图标（与页面一致）
+    expect(html).not.toContain('list-style:decimal'); // 不再使用纯数字列表
+    // 移动端适配媒体查询
+    expect(html).toContain('@media (max-width: 640px)');
+    // 基本情况折叠（与页面一致：默认收起，点击展开）
+    expect(html).toContain('class="fold-head"');
+    expect(html).toContain('class="fold-body" hidden');
+    expect(html).toContain('fold-toggle');
+  });
+
+  it('HTML 基本情况含数字校验标注（异常值附「疑似填写错误待核实」）', async () => {
+    const bad: AnonymizedStudent = {
+      ...sampleStudent,
+      weight: '105kg', annualIncome: 1,
+    };
+    const result = await new MockAnalysisProvider().analyze({
+      meta, students: [bad],
+    } satisfies AnalysisRequest);
+    const html = reportToHtml(generateReport(result, meta, now, [bad]));
+    expect(html).toContain('105kg <span class="badge-warn">疑似填写错误待核实</span>');
+    expect(html).toContain('>1 <span class="badge-warn">疑似填写错误待核实</span>');
+  });
+
   it('escapeHtml 转义动态文本（防止内容破坏 HTML 结构）', () => {
     expect(escapeHtml('<script>alert(1)</script>')).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(escapeHtml('a"b&c')).toBe('a&quot;b&amp;c');

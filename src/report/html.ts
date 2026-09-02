@@ -2,6 +2,7 @@ import { GENERAL_GUIDE } from './general-guide';
 import type { Report } from './types';
 import type { AnonymizedStudent } from '../types/student';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
+import { checkNumericIssues } from '../anonymization/numeric-validation';
 
 /**
  * 报告 → 单文件 HTML（完全自包含：内联 CSS + CSS 柱状图，无任何外部资源，离线可打开）。
@@ -19,11 +20,16 @@ export function escapeHtml(text: string): string {
 
 function basicInfoRows(s: AnonymizedStudent): string {
   const rows: string[] = [];
+  // 数字校验（与页面同一规则）：异常值后附「疑似填写错误待核实」标签
+  const issueKeys = new Set(checkNumericIssues(s).map((i) => i.key));
   for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
     if (k === 'anonymousId') continue;
     const v = s[k];
     if (v == null || v === '') continue;
-    rows.push(`<tr><td>${escapeHtml(STUDENT_FIELD_LABELS[k])}</td><td>${escapeHtml(String(v))}</td></tr>`);
+    const badge = issueKeys.has(k)
+      ? ' <span class="badge-warn">疑似填写错误待核实</span>'
+      : '';
+    rows.push(`<tr><td>${escapeHtml(STUDENT_FIELD_LABELS[k])}</td><td>${escapeHtml(String(v))}${badge}</td></tr>`);
   }
   return rows.length > 0 ? rows.join('') : '<tr><td colspan="2">暂无。</td></tr>';
 }
@@ -48,6 +54,7 @@ function listItems(items: string[], empty: string, tone = ''): string {
 const IMPORTANCE_TONE: Record<string, string> = {
   high: 'tag-high', medium: 'tag-mid', low: 'tag-low',
 };
+const IMPORTANCE_LABEL: Record<string, string> = { high: '高', medium: '中', low: '低' };
 
 export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, string>): string {
   const sa = report.schoolAnalysis;
@@ -78,32 +85,37 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     const display = nameIndex?.get(g.studentId) ?? g.studentId;
     const title = nameIndex?.has(g.studentId) ? `${display}（${g.studentId}）` : display;
     const local = dataById.get(g.studentId);
+    const highFactors = g.mainDifficultyFactors.filter((f) => f.importance === 'high');
+    const factors = g.mainDifficultyFactors.map((f) => `
+      <div class="factor">
+        <span class="tag ${IMPORTANCE_TONE[f.importance]}">${IMPORTANCE_LABEL[f.importance]}</span>
+        <div class="factor-body"><b>${escapeHtml(f.factor)}</b><p>${escapeHtml(f.evidence)}</p></div>
+      </div>`).join('');
+    const questions = g.interviewQuestions.map((q, i) =>
+      `<li><span class="num">${i + 1}</span>${escapeHtml(q)}</li>`).join('');
     return `
 <section class="student">
   <h3>${escapeHtml(title)}</h3>
-  ${g.mainDifficultyFactors.length > 0
-    ? `<p class="tags">${g.mainDifficultyFactors.map((f) =>
-      `<span class="tag ${IMPORTANCE_TONE[f.importance]}">${escapeHtml(f.factor)} · ${f.importance}</span>`).join('')}</p>`
+  ${highFactors.length > 0
+    ? `<div class="banner-warn">重点困难：${highFactors.map((f) =>
+      `<span class="tag tag-high">${escapeHtml(f.factor)}</span>`).join('')}</div>`
     : ''}
-  <h4>基本情况</h4>
-  <table class="info"><tbody>${local ? basicInfoRows(local) : '<tr><td colspan="2">暂无。</td></tr>'}</tbody></table>
   <h4>材料要点摘要</h4>
-  <p>${escapeHtml(g.summary)}</p>
+  <div class="textcard"><span class="tc-icon">📝</span><span>${escapeHtml(g.summary)}</span></div>
   <h4>家庭情况概括</h4>
-  <p>${escapeHtml(g.familySituation)}</p>
+  <div class="textcard green"><span class="tc-icon">👪</span><span>${escapeHtml(g.familySituation)}</span></div>
+  <h4 class="fold-head">基本情况 <span class="fold-toggle">展开</span></h4>
+  <div class="fold-body" hidden>
+    <table class="info"><tbody>${local ? basicInfoRows(local) : '<tr><td colspan="2">暂无。</td></tr>'}</tbody></table>
+  </div>
   <h4>主要困难因素</h4>
-  ${g.mainDifficultyFactors.length > 0
-    ? `<ul>${g.mainDifficultyFactors.map((f) =>
-      `<li><b>${escapeHtml(f.factor)}</b>（${f.importance}）：${escapeHtml(f.evidence)}</li>`).join('')}</ul>`
-    : '<p class="empty">材料中未识别出明显困难因素。</p>'}
-  <h4 class="warn">需要重点核实</h4>
-  ${listItems(g.informationToVerify, '暂未发现明显需要核实的事项。', 'warn')}
+  ${factors ? `<div class="factors">${factors}</div>` : '<p class="empty">材料中未识别出明显困难因素。</p>'}
+  <h4 class="warn-red">需要重点核实</h4>
+  <div class="card-warn">${listItems(g.informationToVerify, '暂未发现明显需要核实的事项。', 'warn')}</div>
   <h4>推荐面谈问题</h4>
-  ${g.interviewQuestions.length > 0
-    ? `<ol>${g.interviewQuestions.map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ol>`
-    : '<p class="empty">暂无。</p>'}
+  <ol class="questions">${questions || '<p class="empty">暂无。</p>'}</ol>
   <h4 class="warn">面谈注意事项</h4>
-  ${listItems(g.interviewNotes, '无特殊注意事项。', 'warn')}
+  <div class="card-amber">${listItems(g.interviewNotes, '无特殊注意事项。', 'warn')}</div>
 </section>`;
   }).join('\n');
 
@@ -151,9 +163,39 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   .bar-count { width: 48px; font-size: 12px; color: #64748b; }
   .student { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; background: #fff; }
   .student h3 { margin: 0 0 8px; font-size: 15px; color: #047857; }
+  .banner-warn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 6px 12px; margin-bottom: 10px; font-size: 12px; color: #92400e; }
+  .card-warn { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 12px; }
+  .card-amber { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; }
+  h4.warn-red { color: #b91c1c; }
+  .badge-warn { display: inline-block; background: #fef3c7; color: #b45309; border-radius: 4px; padding: 0 6px; font-size: 11px; margin-left: 4px; white-space: nowrap; }
+  [hidden] { display: none !important; }
+  .fold-head { cursor: pointer; user-select: none; transition: color .15s; }
+  .fold-head:hover { color: #047857; }
+  .fold-toggle { color: #047857; font-size: 12px; font-weight: 500; margin-left: 6px; }
+  .factors { display: flex; flex-direction: column; gap: 6px; }
+  .factor { display: flex; gap: 8px; align-items: flex-start; background: #f8fafc; border-radius: 8px; padding: 8px 12px; }
+  .factor-body b { font-size: 13px; color: #1e293b; }
+  .factor-body p { margin: 2px 0 0; font-size: 12px; color: #64748b; }
+  .textcard { display: flex; gap: 8px; align-items: flex-start; background: #f8fafc; border-left: 3px solid #93c5fd; border-radius: 6px; padding: 8px 12px; margin: 4px 0; }
+  .textcard.green { border-left-color: #6ee7b7; }
+  .tc-icon { font-size: 15px; line-height: 1.6; flex-shrink: 0; }
+  .questions { list-style: none; padding-left: 0; margin-top: 4px; }
+  .questions li { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0; }
+  .num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 11px; font-weight: 600; flex-shrink: 0; }
   .guide { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; background: #fff; }
   .guide h4 { margin: 0 0 6px; font-size: 13px; color: #334155; }
   @media print { body { background: #fff; } .card, .student { break-inside: avoid; } }
+  @media (max-width: 640px) {
+    body { font-size: 13px; }
+    .page { padding: 14px 10px 40px; }
+    .banner { padding: 12px 14px; }
+    .banner h1 { font-size: 17px; }
+    .card { padding: 14px; }
+    .student { padding: 12px 14px; }
+    table.info { display: block; overflow-x: auto; white-space: nowrap; }
+    .bar-label { width: 56px; }
+    .bar-count { width: 44px; }
+  }
 </style>
 </head>
 <body>
@@ -169,6 +211,10 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     <h3>困难类型分布</h3>
     ${levelChart.length > 0 ? cssBarChart(levelChart) : '<p class="empty">材料中未填写困难度，无法统计。</p>'}
     ${factorChart.length > 0 ? `<h3>困难因素重要性分布</h3>${cssBarChart(factorChart)}` : ''}
+    ${sa.difficultyPatterns.length > 0
+      ? `<h3>AI 归纳的困难类型</h3><p class="tags">${sa.difficultyPatterns.map((p) =>
+        `<span class="tag tag-low">${escapeHtml(p)}</span>`).join('')}</p>`
+      : ''}
     <h3>共性问题</h3>
     ${listItems(sa.commonIssues, '暂无。')}
     <h3 class="warn">材料质量提示</h3>
@@ -191,6 +237,18 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     ${guideSections}
   </div>
 </div>
+<script>
+// 基本情况折叠：与平台页面一致，点击标题展开/收起（纯内联，无外部依赖）
+document.querySelectorAll('.fold-head').forEach(function (h) {
+  h.addEventListener('click', function () {
+    var body = h.nextElementSibling;
+    var open = body.hidden;
+    body.hidden = !open;
+    var t = h.querySelector('.fold-toggle');
+    if (t) t.textContent = open ? '收起' : '展开';
+  });
+});
+</script>
 </body>
 </html>
 `;

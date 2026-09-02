@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>珍珠生申请信息分析报告小工具 — 介绍</title>
+<style>
+  :root {
+    --bg: #050507; --fg: #f5f5f7; --dim: #86868b; --accent: #34d399;
+    --card-bg: rgba(255,255,255,.04); --card-border: rgba(255,255,255,.12);
+    --row-bg: rgba(255,255,255,.05); --row-border: rgba(255,255,255,.1);
+    --title-grad: linear-gradient(180deg, #fff 30%, #9ca3af);
+    --num-grad: linear-gradient(180deg, #fff 25%, #34d399 130%);
+    --note-bg: rgba(52,211,153,.08); --note-border: rgba(52,211,153,.4); --note-fg: #a7f3d0;
+    --dot-bg: rgba(255,255,255,.25); --hint: rgba(255,255,255,.3); --link: #6ee7b7;
+  }
+  [data-theme="light"] {
+    --bg: #f5f5f7; --fg: #1d1d1f; --dim: #6e6e73; --accent: #059669;
+    --card-bg: rgba(0,0,0,.03); --card-border: rgba(0,0,0,.09);
+    --row-bg: rgba(0,0,0,.04); --row-border: rgba(0,0,0,.08);
+    --title-grad: linear-gradient(180deg, #1d1d1f 30%, #9ca3af);
+    --num-grad: linear-gradient(180deg, #1d1d1f 25%, #059669 130%);
+    --note-bg: rgba(5,150,105,.08); --note-border: rgba(5,150,105,.35); --note-fg: #047857;
+    --dot-bg: rgba(0,0,0,.2); --hint: rgba(0,0,0,.3); --link: #047857;
+  }
+  /* 浅色模式：标题/大数字不用渐变，纯色 */
+  [data-theme="light"] .title, [data-theme="light"] .num {
+    background: none; -webkit-background-clip: initial; background-clip: initial; color: var(--fg);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background .4s ease, color .4s ease;
+  }
+  .stage { height: 100%; position: relative; }
+  .slide {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 60px 8vw; opacity: 0; pointer-events: none; transform: scale(1.02);
+    transition: opacity .7s cubic-bezier(.25,.1,.25,1), transform .7s cubic-bezier(.25,.1,.25,1);
+  }
+  .slide.active { opacity: 1; pointer-events: auto; transform: scale(1); }
+  .slide .kicker {
+    font-size: clamp(18px, 2.4vw, 32px); letter-spacing: .3em; color: var(--accent);
+    text-transform: uppercase; font-weight: 600; opacity: 0; transform: translateY(18px);
+    align-self: flex-start; margin-left: 2vw;
+  }
+  .slide .title {
+    margin-top: 26px; font-size: clamp(30px, 5vw, 72px); font-weight: 700;
+    letter-spacing: -.02em; line-height: 1.14; background: var(--title-grad);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    opacity: 0; transform: translateY(26px);
+  }
+  .slide .sub {
+    margin-top: 32px; max-width: 1000px; font-size: clamp(24px, 4vw, 50px);
+    color: var(--dim); font-weight: 400; line-height: 1.55; opacity: 0; transform: translateY(26px);
+  }
+  .slide.active .kicker { animation: rise .8s .15s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .slide.active .title  { animation: rise .9s .3s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .slide.active .sub    { animation: rise .9s .45s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .slide.active .row    { animation: rise .9s .55s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .slide.active .stat   { animation: rise .8s .55s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .slide.active .steps  { animation: rise .9s .6s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .slide.active .note   { animation: rise .9s .75s cubic-bezier(.22,1.2,.36,1) forwards; }
+  @keyframes rise { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
+
+  .stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 64px; margin-top: 64px; opacity: 0; }
+  .slide.active .stats { animation: rise .9s .6s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .stat .num { font-size: clamp(48px, 7vw, 96px); font-weight: 700; letter-spacing: -.03em; background: var(--num-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .stat .lbl { margin-top: 8px; font-size: clamp(18px, 2vw, 28px); color: var(--dim); }
+
+  .steps { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 64px; max-width: 1100px; opacity: 0; }
+  .step { flex: 1; min-width: 200px; border: 1px solid var(--card-border); border-radius: 20px; padding: 34px 24px; background: var(--card-bg); backdrop-filter: blur(10px); }
+  .step .n { font-size: clamp(44px, 6vw, 80px); font-weight: 700; color: var(--accent); }
+  .step .t { margin-top: 12px; font-size: clamp(20px, 2.6vw, 34px); font-weight: 600; }
+  .step .d { margin-top: 8px; font-size: clamp(15px, 1.9vw, 25px); color: var(--dim); line-height: 1.5; }
+
+  .rows { margin-top: 56px; display: flex; flex-direction: column; gap: 18px; max-width: 900px; opacity: 0; }
+  .slide.active .rows { animation: rise .9s .6s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .row { display: flex; align-items: flex-start; gap: 22px; text-align: left; padding: 22px 26px; border-radius: 16px; background: var(--row-bg); border: 1px solid var(--row-border); }
+  .row .ic { font-size: 32px; line-height: 1.4; }
+  .row .tt { font-size: clamp(20px, 2.6vw, 34px); font-weight: 600; }
+  .row .dd { margin-top: 6px; font-size: clamp(16px, 2vw, 26px); color: var(--dim); line-height: 1.55; }
+
+  .note { margin-top: 48px; display: inline-flex; align-items: center; gap: 12px; padding: 14px 32px; border-radius: 999px; border: 1px solid var(--note-border); background: var(--note-bg); color: var(--note-fg); font-size: clamp(18px, 2.4vw, 32px); opacity: 0; transition: background .4s ease, border-color .4s ease, color .4s ease; }
+
+  .modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 64px; max-width: 1100px; opacity: 0; }
+  .slide.active .modules { animation: rise .9s .6s cubic-bezier(.22,1.2,.36,1) forwards; }
+  .module { border: 1px solid var(--card-border); border-radius: 18px; padding: 26px 22px; background: var(--card-bg); backdrop-filter: blur(10px); text-align: left; }
+  .module .ic { font-size: 30px; }
+  .module .t { margin-top: 10px; font-size: clamp(18px, 2.2vw, 30px); font-weight: 600; }
+  .module .d { margin-top: 6px; font-size: clamp(14px, 1.8vw, 24px); color: var(--dim); line-height: 1.55; }
+  .module.center { text-align: center; }
+  .module.center .num { font-size: clamp(32px, 4vw, 60px); font-weight: 700; letter-spacing: -.02em; background: var(--num-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .module.center .t { margin-top: 12px; }
+
+  .dots { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 10; }
+  .dots button { width: 9px; height: 9px; border-radius: 99px; border: 0; background: var(--dot-bg); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--accent); width: 26px; }
+  .hint { position: fixed; bottom: 26px; right: 32px; color: var(--hint); font-size: 13px; z-index: 10; transition: color .4s ease; }
+  .theme-btn { position: fixed; top: 22px; right: 24px; z-index: 20; width: 42px; height: 42px; border-radius: 999px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--fg); font-size: 18px; cursor: pointer; backdrop-filter: blur(8px); transition: background .4s ease, color .4s ease, border-color .4s ease, transform .15s ease; }
+  .theme-btn:hover { transform: scale(1.08); }
+</style>
+</head>
+<body>
+<button class="theme-btn" id="themeBtn" aria-label="切换深浅模式" title="切换深浅模式">🌙</button>
+<div class="stage" id="stage">
+
+  <section class="slide active">
+    <p class="kicker">新华教育基金会 · 内部小工具</p>
+    <h1 class="title">珍珠生申请信息分析报告小工具</h1>
+    <p class="sub">帮助你走访前和面谈时<br>快速了解候选珍珠生情况</p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">为什么需要它</p>
+    <h1 class="title">了解候选生，不该这么费时</h1>
+    <div class="stats">
+      <div class="stat"><div class="num">30-100</div><div class="lbl">单校候选学生（人）</div></div>
+      <div class="stat"><div class="num">6000+</div><div class="lbl">2026 年待审核人数</div></div>
+      <div class="stat"><div class="num">60+</div><div class="lbl">申请字段 / 人</div></div>
+    </div>
+    <p class="sub">逐份翻阅 Excel、人工比对数据、遗漏单位错误 —— 交给工具快速梳理。</p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">隐私保护</p>
+    <h1 class="title">隐私保护，是第一原则</h1>
+    <div class="rows">
+      <div class="row"><span class="ic">🔒</span><div><p class="tt">数据绝不出本机</p><p class="dd">Excel 只在浏览器本地处理，不上传、不存储；原始学生信息永不离开您的电脑</p></div></div>
+      <div class="row"><span class="ic">✂️</span><div><p class="tt">敏感信息自动清除</p><p class="dd">姓名、身份证、电话、住址等字段发送前自动删除，AI 只看到匿名编号</p></div></div>
+      <div class="row"><span class="ic">🖱️</span><div><p class="tt">发送前逐层扫描，绝不自动发送</p><p class="dd">脱敏数据经三道强制检查，发现问题立即阻止；所有发送都需您手动确认</p></div></div>
+    </div>
+    <p class="note">📌 工具仅提供快速参考 —— 实际审核判断，始终由工作人员完成</p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">使用流程</p>
+    <h1 class="title">四步，拿到一份分析报告</h1>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><div class="t">上传 Excel</div><div class="d">拖入学生申请名单，自动识别字段与届别</div></div>
+      <div class="step"><div class="n">2</div><div class="t">自动脱敏检查</div><div class="d">敏感信息本地自动清洗，数字校验提前提示疑点</div></div>
+      <div class="step"><div class="n">3</div><div class="t">AI 分析</div><div class="d">确认后开始，通常 1 分钟内完成</div></div>
+      <div class="step"><div class="n">4</div><div class="t">查看报告</div><div class="d">走访前 / 面谈时快速了解每位候选生</div></div>
+    </div>
+    <p class="note">📍 办公室局域网访问 http://172.16.0.146/ 即可使用 · 💻 当前仅支持电脑版浏览器</p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">特色功能</p>
+    <h1 class="title">AI，帮您「看」得更全</h1>
+    <div class="rows">
+      <div class="row"><span class="ic">🧠</span><div><p class="tt">重点信息自动提取</p><p class="dd">材料要点、家庭情况、困难因素逐生归纳，面谈问题提前生成</p></div></div>
+      <div class="row"><span class="ic">🔍</span><div><p class="tt">矛盾与填写问题自动发现</p><p class="dd">申请理由一致性交叉验证、经济困难真实性核查、数值单位校验（如负债 8 元、体重 105kg）</p></div></div>
+      <div class="row"><span class="ic">📊</span><div><p class="tt">学校级概览</p><p class="dd">困难类型分布图表、共性问题、重点核实主题一键掌握</p></div></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">特色功能</p>
+    <h1 class="title">报告，为走访而生</h1>
+    <div class="rows">
+      <div class="row"><span class="ic">🗂️</span><div><p class="tt">卡片化分模块展示</p><p class="dd">重点困难、基本情况、核实事项、面谈问题分层呈现，一眼抓重点</p></div></div>
+      <div class="row"><span class="ic">📥</span><div><p class="tt">本地存档 30 天</p><p class="dd">报告自动保存在本机浏览器，随时回看，未访问自动过期删除</p></div></div>
+      <div class="row"><span class="ic">🔎</span><div><p class="tt">面谈时快速定位</p><p class="dd">输入姓名实时下拉定位学生，弹窗查看完整信息</p></div></div>
+      <div class="row"><span class="ic">📄</span><div><p class="tt">一键下载</p><p class="dd">Markdown 或单文件 HTML，离线可用，方便打印转发</p></div></div>
+    </div>
+    <p class="note">🧪 目前先在办公室局域网内试用 —— 如果实际工作中确实有帮助，再部署支持远程访问</p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">报告介绍</p>
+    <h1 class="title">一份报告，五大模块</h1>
+    <div class="modules">
+      <div class="module"><div class="ic">📝</div><p class="t">材料要点摘要</p><p class="d">逐生归纳申请材料核心信息，一眼了解基本情况</p></div>
+      <div class="module"><div class="ic">👪</div><p class="t">家庭情况概括</p><p class="d">家庭背景与经济状况速览，走访前心中有数</p></div>
+      <div class="module"><div class="ic">⚠️</div><p class="t">主要困难因素</p><p class="d">按重要性分级标注（高/中/低），附证据出处</p></div>
+      <div class="module"><div class="ic">🔍</div><p class="t">需要重点核实</p><p class="d">材料矛盾与填写疑点自动列出，面谈时逐一确认</p></div>
+      <div class="module"><div class="ic">💬</div><p class="t">推荐面谈问题</p><p class="d">基于材料自动生成 5-8 个问题，面谈不冷场</p></div>
+    </div>
+    <p class="note">📌 另有学校级概览：困难类型分布、共性问题、重点核实主题</p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">工作投入</p>
+    <h1 class="title">用心打磨的小工具</h1>
+    <div class="modules" style="margin-top:52px">
+      <div class="module center"><div class="num">11 天</div><p class="t">开发周期（8/21 – 8/31）</p></div>
+      <div class="module center"><div class="num">79</div><p class="t">代码提交次数</p></div>
+      <div class="module center"><div class="num">259</div><p class="t">自动化测试全部通过</p></div>
+      <div class="module center"><div class="num">3.2 亿</div><p class="t">AI 开发 token 用量（含上下文缓存）</p></div>
+    </div>
+    <p class="sub" style="margin-top:44px">以上全部由 AI 辅助开发完成，历经真实数据反复验证后上线。</p>
+    <p class="note">
+      💻 源码仓库：
+      <a href="https://git.ewing.top/yoea/pearl_visit_assistant" target="_blank" rel="noopener" style="color:var(--link);text-decoration:underline">git.ewing.top/yoea/pearl_visit_assistant</a>
+    </p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">开发计划</p>
+    <h1 class="title">下一步，我们计划</h1>
+    <div class="rows">
+      <div class="row"><span class="ic">📱</span><div><p class="tt">手机端适配与远程访问</p><p class="dd">走访现场也能用手机随时查看报告，支持远程安全访问</p></div></div>
+      <div class="row"><span class="ic">👨‍👩‍👧</span><div><p class="tt">支持更多材料导入</p><p class="dd">家庭成员信息、珍珠生「一封信」等材料一并导入分析，画像更完整</p></div></div>
+      <div class="row"><span class="ic">📋</span><div><p class="tt">核实结果一键导出</p><p class="dd">报告中需要核实的项目，确认后一键导出为表格，走访记录更省心</p></div></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">感谢聆听</p>
+    <h1 class="title">让走访前，多一份参考</h1>
+    <p class="sub">珍珠生申请信息分析报告小工具 · 新华教育基金会</p>
+    <p class="note">分析报告仅供参考 —— 最终判断，始终由您完成</p>
+  </section>
+
+</div>
+
+<div class="dots" id="dots"></div>
+<p class="hint">滚轮 / 方向键翻页</p>
+
+<script>
+(function () {
+  const slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  const dotsWrap = document.getElementById('dots');
+  let idx = 0, locked = false;
+
+  slides.forEach(function (_, i) {
+    const b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 页');
+    b.addEventListener('click', function () { go(i); });
+    dotsWrap.appendChild(b);
+  });
+  const dots = Array.prototype.slice.call(dotsWrap.children);
+
+  function go(next) {
+    next = Math.max(0, Math.min(slides.length - 1, next));
+    if (next === idx) return;
+    slides[idx].classList.remove('active');
+    idx = next;
+    slides[idx].classList.add('active');
+    dots.forEach(function (d, i) { d.classList.toggle('on', i === idx); });
+  }
+  function step(dir) { go(idx + dir); }
+
+  window.addEventListener('wheel', function (e) {
+    if (locked) return;
+    if (Math.abs(e.deltaY) < 8) return;
+    locked = true;
+    step(e.deltaY > 0 ? 1 : -1);
+    setTimeout(function () { locked = false; }, 700);
+  }, { passive: true });
+
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); go(0); }
+    else if (e.key === 'End') { e.preventDefault(); go(slides.length - 1); }
+  });
+
+  let touchY = null;
+  window.addEventListener('touchstart', function (e) { touchY = e.touches[0].clientY; }, { passive: true });
+  window.addEventListener('touchend', function (e) {
+    if (touchY === null) return;
+    const dy = touchY - e.changedTouches[0].clientY;
+    if (Math.abs(dy) > 60) step(dy > 0 ? 1 : -1);
+    touchY = null;
+  }, { passive: true });
+
+  dots[0].classList.add('on');
+
+  // 深浅模式切换（记住选择；失败静默忽略）
+  var themeBtn = document.getElementById('themeBtn');
+  var savedTheme = null;
+  try { savedTheme = localStorage.getItem('ppt-theme'); } catch (e) {}
+  if (savedTheme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  function renderThemeBtn() {
+    themeBtn.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '☀️' : '🌙';
+  }
+  themeBtn.addEventListener('click', function () {
+    var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (isLight) document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', 'light');
+    try { localStorage.setItem('ppt-theme', isLight ? 'dark' : 'light'); } catch (e) {}
+    renderThemeBtn();
+  });
+  renderThemeBtn();
+})();
+</script>
+</body>
+</html>

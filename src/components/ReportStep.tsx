@@ -82,6 +82,8 @@ function StudentSection({ g, local }: {
 }) {
   const basics = local ? basicInfoOf(local) : [];
   const highFactors = g.mainDifficultyFactors.filter((f) => f.importance === 'high');
+  // 基本情况默认折叠：优先展示家庭情况与材料要点（走访最关注的信息）
+  const [showBasics, setShowBasics] = useState(false);
   return (
     <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
       {/* 重点困难概览条：突出 high 因素 */}
@@ -92,30 +94,39 @@ function StudentSection({ g, local }: {
         </div>
       )}
 
-      {/* 基本情况：两列信息卡（label 左 / value 右） */}
-      {basics.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <h4 className="flex items-center gap-1.5 border-l-4 border-slate-300 pl-2 text-xs font-semibold text-slate-700">
-            <span aria-hidden="true">📋</span> 基本情况
-          </h4>
-          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-            {basics.map(({ key, label, value }) => (
-              <div key={label} className="flex items-baseline gap-1.5">
-                <dt className="w-24 shrink-0 text-xs text-slate-400">{label}</dt>
-                <dd className="text-xs text-slate-700">
-                  {value}
-                  {fieldAnomalyOf(key, value, local!) && (
-                    <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">疑似填写错误待核实</span>
-                  )}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      )}
-
       <TextCard icon="📝" title="材料要点摘要" accent="border-blue-300" text={g.summary} />
       <TextCard icon="👪" title="家庭情况概括" accent="border-emerald-300" text={g.familySituation} />
+
+      {/* 基本情况：默认折叠，点击展开（两列信息卡，label 左 / value 右） */}
+      {basics.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setShowBasics(!showBasics)}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <h4 className="flex items-center gap-1.5 border-l-4 border-slate-300 pl-2 text-xs font-semibold text-slate-700">
+              <span aria-hidden="true">📋</span> 基本情况
+            </h4>
+            <span className="text-xs font-medium text-emerald-700">{showBasics ? '收起' : '展开'}</span>
+          </button>
+          {showBasics && (
+            <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              {basics.map(({ key, label, value }) => (
+                <div key={label} className="flex items-baseline gap-1.5">
+                  <dt className="w-24 shrink-0 text-xs text-slate-400">{label}</dt>
+                  <dd className="text-xs text-slate-700">
+                    {value}
+                    {fieldAnomalyOf(key, value, local!) && (
+                      <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">疑似填写错误待核实</span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      )}
 
       {/* 主要困难因素：每因素独立小卡 */}
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
