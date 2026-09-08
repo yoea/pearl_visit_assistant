@@ -490,6 +490,28 @@ export default function ReportStep({
         </section>
       </Card>
 
+      {/* 资料填写问题（发送前自动清除的敏感误填；需走访时向学生核实） */}
+      {report.cleanIssues && report.cleanIssues.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4">
+          <h3 className="text-sm font-semibold text-amber-800">
+            资料填写问题（{report.cleanIssues.length} 处，已自动清除敏感信息）
+          </h3>
+          <p className="mt-1 text-xs text-amber-700/80">
+            以下字段疑似误填了证件号/电话等敏感信息，发送给 AI 的内容已不含原文；走访时请向学生核实真实内容。
+          </p>
+          <ul className="mt-2 space-y-1">
+            {report.cleanIssues.map((c) => (
+              <li key={`${c.studentId}-${c.fieldLabel}-${c.originalMasked}`} className="flex flex-wrap items-center gap-1.5 text-xs text-amber-800">
+                <span className="font-medium">{nameIndex.get(c.studentId) ?? c.studentId}</span>
+                <span className="text-amber-700">
+                  · {c.fieldLabel} 原填 {c.originalMasked}，{c.note}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Card>
         <h3 className="text-base font-semibold text-slate-800">二、单个学生面谈参考</h3>
         <div className="mt-3 space-y-2">

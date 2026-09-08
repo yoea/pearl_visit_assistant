@@ -5,7 +5,9 @@ import { ACTION_LABELS, DROP_REASON_LABELS, STUDENT_FIELD_LABELS } from '../util
 import { SENT_FIELDS } from '../analysis/payload';
 import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeric-validation';
 import { rawStore } from '../anonymization/raw-store';
+import { downloadTextFile } from '../utils/download';
 import type { SecurityFinding } from '../security/scanner';
+import type { CleanedIssue } from '../security/auto-clean';
 import Card from './ui/Card';
 import StatCard from './ui/StatCard';
 import Button from './ui/Button';
@@ -70,7 +72,7 @@ function estimateDuration(n: number): string {
 }
 
 export default function ProcessStep({
-  output, scan, mappedColumns, meta, providerName, modelName, autoCleaned, analyzing, error, onAnalyze, onReset,
+  output, scan, mappedColumns, meta, providerName, modelName, autoCleaned, cleanIssues, analyzing, error, onAnalyze, onReset,
 }: {
   output: AnonymizationOutput;
   /** scanned 阶段一定携带扫描结果；anonymized 半态（自动流转的瞬时态）为 undefined，显示防御态 */
@@ -78,6 +80,8 @@ export default function ProcessStep({
   mappedColumns: MappedColumn[];
   /** 自动清洗的敏感字段数（发送前自动剥除；>0 时检查页提示） */
   autoCleaned?: number;
+  /** 自动清洗明细（每处误填记录：学生/字段/掩码值/处理说明） */
+  cleanIssues?: CleanedIssue[];
   meta: { schoolName: string; cohort: string };
   /** 分析模式：'mock'（本地模拟，数据不出本机）| 'deepseek'（真实 AI）——绝不静默假装真实 AI */
   providerName: string;
@@ -261,19 +265,22 @@ export default function ProcessStep({
         </ul>
       </Card>
 
-      {/* 数字校验：身高/体重/收入/负债等易错字段（分析前提前提示，AI 分析时进一步核查逻辑性） */}
+      {/* 填写校验：数字校验 + 敏感信息误填（分析前提前提示；可导出问题表走访核对） */}
       <Card>
-        <h2 className="text-lg font-semibold text-slate-800">数字校验（身高/体重/收入/负债等）</h2>
+        <h2 className="text-lg font-semibold text-slate-800">资料填写校验</h2>
         <p className="mt-1 text-sm text-slate-500">
-          对最容易搞错单位的数值字段做常识校验（如年收入填 1、2、3，体重填 105，负债 8 元）。
-          疑似错误会在分析前标出，AI 分析时将进一步核查数据逻辑性。
+          校验两类填写问题：① 易错单位的数值字段（年收入填 1、2、3，体重 105，负债 8 元）；
+          ② 字段误填证件号/电话等敏感信息（已自动清除，发送内容不含）。
+          均可在走访时向学生核实。
         </p>
+
+        <h3 className="mt-4 text-sm font-semibold text-slate-700">数字校验（身高/体重/收入/负债等）</h3>
         {numericIssues.length === 0 ? (
-          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             ✓ 未发现疑似填写错误
           </p>
         ) : (
-          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
             <p className="text-xs font-medium text-amber-800">
               发现 {numericIssues.length} 处疑似填写错误（{new Set(numericIssues.map((i) => i.studentId)).size} 名学生），请走访时重点核实：
             </p>
@@ -290,6 +297,42 @@ export default function ProcessStep({
             </ul>
           </div>
         )}
+
+        {(cleanIssues ?? []).length > 0 && (
+          <>
+            <h3 className="mt-4 text-sm font-semibold text-slate-700">敏感信息误填（已自动清除 {cleanIssues!.length} 处）</h3>
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <ul className="space-y-1">
+                {cleanIssues!.map((c) => (
+                  <li key={`${c.studentId}-${c.fieldLabel}-${c.originalMasked}`} className="flex flex-wrap items-center gap-1.5 text-xs text-amber-800">
+                    <span className="font-medium">
+                      {c.studentId}{output.nameIndex.get(c.studentId) ? `（${output.nameIndex.get(c.studentId)}）` : ''}
+                    </span>
+                    <span className="text-amber-700">· {c.fieldLabel}：{c.originalMasked}</span>
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium">{c.note}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11px] text-amber-700">
+                原表数据未修改，请反馈学校核对后修正；本工具发送给 AI 的内容已不含以上敏感信息。
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* 导出问题表（CSV）：编号/姓名/疑似错误的点/正确应该什么样，Excel 可直接打开 */}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button
+            variant="secondary"
+            disabled={numericIssues.length === 0 && (cleanIssues ?? []).length === 0}
+            onClick={() => exportIssueCsv(meta.schoolName, output.nameIndex, numericIssues, cleanIssues ?? [])}
+          >
+            导出填写校验问题表（CSV）
+          </Button>
+          <p className="text-xs text-slate-400">
+            含学生姓名，请妥善保管；字段：编号 / 姓名 / 疑似错误的点 / 正确应该什么样
+          </p>
+        </div>
       </Card>
 
       {/* 字段映射摘要（默认折叠） */}
@@ -382,6 +425,56 @@ export default function ProcessStep({
       </Card>
     </div>
   );
+}
+
+/** 数值字段的「正确应该什么样」提示（导出表用） */
+const EXPECTED_HINTS: Record<string, string> = {
+  height: '身高（cm），如 165；填 1.65 系米/厘米单位错误',
+  weight: '体重（kg），如 55；105 多为斤，需换算确认',
+  annualIncome: '家庭年收入（元），如 30000；填 1/2/3 多为漏「万」',
+  perCapitaIncome: '人均年收入（元），且不应高于年收入',
+  debtStatus: '负债金额（元），如 50000；8 元等极小值不现实',
+  distanceToSchoolKm: '距高中公里数，一般不超过 100',
+  schoolChildrenCount: '上学子女人数（整数），如 2',
+  zhongkaoScore: '中考成绩不应高于满分（zhongkaoFullScore）',
+};
+
+interface IssueRow {
+  studentId: string;
+  name?: string;
+  issue: string; // 疑似错误的点
+  expected: string; // 正确应该什么样
+}
+
+/** 组装校验问题表并下载（CSV with BOM，Excel 直接打开不乱码） */
+function exportIssueCsv(
+  schoolName: string,
+  nameIndex: ReadonlyMap<string, string>,
+  numericIssues: { studentId: string; key: string; label: string; value: string }[],
+  cleanIssues: CleanedIssue[],
+): void {
+  const rows: IssueRow[] = [
+    ...numericIssues.map((i) => ({
+      studentId: i.studentId,
+      name: nameIndex.get(i.studentId),
+      issue: `${i.label}填写「${i.value}」，${NUMERIC_ERROR_LABEL}`,
+      expected: EXPECTED_HINTS[i.key] ?? '请与申请材料核对实际值',
+    })),
+    ...cleanIssues.map((c) => ({
+      studentId: c.studentId,
+      name: nameIndex.get(c.studentId),
+      issue: `${c.fieldLabel}填写疑似混入敏感信息（原值 ${c.originalMasked}），已${c.note}`,
+      expected: '请核对申请材料补填实际内容（该字段不应含证件号/电话等）',
+    })),
+  ];
+  if (rows.length === 0) return;
+  const esc = (v: string) => (v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v);
+  const lines = ['编号,姓名,疑似错误的点,正确应该什么样'];
+  for (const r of rows) {
+    const name = r.name ?? '';
+    lines.push([esc(r.studentId), esc(name), esc(r.issue), esc(r.expected)].join(','));
+  }
+  downloadTextFile(`填写校验问题表-${schoolName}.csv`, `﻿${lines.join('\n')}`, 'text/csv;charset=utf-8');
 }
 
 function FragmentRow({ student, expanded, onToggle }: {

@@ -1,5 +1,6 @@
 import type { AnonymizationOutput, MappedColumn } from './student';
 import type { SecurityScanResult } from '../security/scanner';
+import type { CleanedIssue } from '../security/auto-clean';
 import type { AnalysisResult } from '../analysis/provider';
 import type { Report } from '../report/types';
 
@@ -20,7 +21,13 @@ export type PipelineState =
   | { stage: 'idle' }
   | (ParsedState & { stage: 'parsed' })
   | { stage: 'anonymized'; output: AnonymizationOutput }
-  | { stage: 'scanned'; output: AnonymizationOutput; scan: SecurityScanResult; autoCleaned?: number }
+  | {
+      stage: 'scanned';
+      output: AnonymizationOutput;
+      scan: SecurityScanResult;
+      autoCleaned?: number;
+      cleanIssues?: CleanedIssue[];
+    }
   | {
       stage: 'analyzed';
       output: AnonymizationOutput;
@@ -28,12 +35,19 @@ export type PipelineState =
       result: AnalysisResult;
       report: Report;
       autoCleaned?: number;
+      cleanIssues?: CleanedIssue[];
     };
 
 export type PipelineEvent =
   | { type: 'PARSE_SUCCEEDED'; parsed: ParsedState }
   | { type: 'ANONYMIZE_SUCCEEDED'; output: AnonymizationOutput }
-  | { type: 'SCAN_SUCCEEDED'; output: AnonymizationOutput; scan: SecurityScanResult; autoCleaned?: number }
+  | {
+      type: 'SCAN_SUCCEEDED';
+      output: AnonymizationOutput;
+      scan: SecurityScanResult;
+      autoCleaned?: number;
+      cleanIssues?: CleanedIssue[];
+    }
   | {
       type: 'ANALYSIS_SUCCEEDED';
       output: AnonymizationOutput;

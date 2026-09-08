@@ -30,10 +30,19 @@ const clean = (students: AnonymizedStudent[], blacklist: Set<string>): {
 describe('autoCleanStudents（发送前自动清洗）', () => {
   it('整个字段都是敏感内容（籍贯误填身份证号）→ 清洗后重扫通过，字段置空', () => {
     const stu = { ...base, ancestralHome: 'G65312520110311183' };
-    const r = clean([stu], new Set());
-    expect(r.passed).toBe(true);
-    expect(r.cleanedCount).toBeGreaterThan(0);
-    expect(r.students[0].ancestralHome).toBeNull();
+    const scan = scanPayload({ meta: { schoolName: '某中学', cohort: 'x' }, students: [stu] }, new Set());
+    const result = autoCleanStudents([stu], scan.findings, new Set());
+    const rescan = scanPayload({ meta: { schoolName: '某中学', cohort: 'x' }, students: result.students }, new Set());
+    expect(rescan.passed).toBe(true);
+    expect(result.cleanedCount).toBeGreaterThan(0);
+    expect(result.students[0].ancestralHome).toBeNull();
+    // issues 记录：学生/字段/掩码值/说明（掩码不泄露完整值）
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0].studentId).toBe('student-001');
+    expect(result.issues[0].fieldLabel).toBe('籍贯');
+    expect(result.issues[0].originalMasked).not.toContain('65312520110311183');
+    expect(result.issues[0].originalMasked).toContain('****');
+    expect(result.issues[0].note).toContain('置空');
   });
 
   it('叙事文本中混入电话 → 只剥除电话片段，中文内容保留', () => {

@@ -1,5 +1,6 @@
 import { RULES, type RuleCategory } from './rules';
-import type { SecurityFinding } from './scanner';
+import { maskSnippet, type SecurityFinding } from './scanner';
+import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import type { AnonymizedStudent } from '../types/student';
 
 /**
@@ -20,6 +21,20 @@ export interface AutoCleanResult {
   students: AnonymizedStudent[];
   /** 实际发生清洗的字段数（0 = 无可自动处理项） */
   cleanedCount: number;
+  /** 每处清洗的记录（供检查页/报告标出；值均为掩码，绝不含完整敏感内容） */
+  issues: CleanedIssue[];
+}
+
+/** 一处被自动清洗的敏感误填记录 */
+export interface CleanedIssue {
+  /** 学生匿名编号（student-001） */
+  studentId: string;
+  /** 字段中文名（如 '籍贯'） */
+  fieldLabel: string;
+  /** 清洗前原值的掩码（如 'G65****83'），绝不包含完整敏感内容 */
+  originalMasked: string;
+  /** 处理说明（已清除混入信息 / 整项置空） */
+  note: string;
 }
 
 /** 剥除后剩余是否为无意义碎片：不含任何中文字符 → 视为敏感内容主体被删除（残留纯字母数字），整个字段置空 */
@@ -48,19 +63,22 @@ export function autoCleanStudents(
 ): AutoCleanResult {
   const out = students.map((s) => ({ ...s }));
   let cleanedCount = 0;
+  const issues: CleanedIssue[] = [];
 
-  /** 回写单个字段的清洗结果（空/碎片 → null）；返回是否发生变化 */
-  const applyClean = (stu: AnonymizedStudent, key: string, stripped: string): boolean => {
+  /** 回写单个字段的清洗结果（空/碎片 → null）；返回 null=未变化，否则返回处理说明 */
+  const applyClean = (stu: AnonymizedStudent, key: string, stripped: string): string | null => {
     const record = stu as unknown as Record<string, unknown>;
     const current = record[key];
-    if (current == null || String(current).trim() === '') return false;
+    if (current == null || String(current).trim() === '') return null;
     const trimmed = stripped.trim();
     const next: string | null = trimmed === '' || isFragment(trimmed) ? null : trimmed;
     if (String(next) !== String(current)) {
       record[key] = next;
-      return true;
+      return next === null
+        ? '整项疑似为敏感信息，已置空（不发送残缺数据）'
+        : '混入的敏感信息已清除';
     }
-    return false;
+    return null;
   };
 
   for (const f of findings) {
@@ -71,7 +89,17 @@ export function autoCleanStudents(
       for (const stu of out) {
         for (const [key, value] of Object.entries(stu)) {
           if (typeof value !== 'string') continue;
-          if (applyClean(stu, key, stripNames(value, nameBlacklist))) cleanedCount += 1;
+          const note = applyClean(stu, key, stripNames(value, nameBlacklist));
+          if (note !== null) {
+            cleanedCount += 1;
+            issues.push({
+              studentId: stu.anonymousId,
+              fieldLabel: STUDENT_FIELD_LABELS[key as keyof typeof STUDENT_FIELD_LABELS] ?? key,
+              originalMasked: maskSnippet(value),
+              note,
+            });
+          }
+          void issues;
         }
       }
       continue;
@@ -85,12 +113,22 @@ export function autoCleanStudents(
     const record = stu as unknown as Record<string, unknown>;
     const current = record[key];
     if (current == null || String(current).trim() === '') continue;
+    const before = String(current);
 
     const rule = CATEGORY_TO_RULE.get(f.category as RuleCategory);
     if (!rule) continue; // 无法映射（如结构类）→ 不自动清洗
     rule.pattern.lastIndex = 0;
-    if (applyClean(stu, key, String(current).replace(rule.pattern, ''))) cleanedCount += 1;
+    const note = applyClean(stu, key, before.replace(rule.pattern, ''));
+    if (note !== null) {
+      cleanedCount += 1;
+      issues.push({
+        studentId: stu.anonymousId,
+        fieldLabel: STUDENT_FIELD_LABELS[key as keyof typeof STUDENT_FIELD_LABELS] ?? key,
+        originalMasked: maskSnippet(before),
+        note,
+      });
+    }
   }
 
-  return { students: out, cleanedCount };
+  return { students: out, cleanedCount, issues };
 }

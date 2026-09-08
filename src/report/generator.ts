@@ -1,5 +1,6 @@
 import type { AnalysisResult } from '../analysis/provider';
 import type { AnonymizedStudent } from '../types/student';
+import type { CleanedIssue } from '../security/auto-clean';
 import type { Report } from './types';
 
 /** 报告生成：仅在内存中组装（不上传、不落盘、不自动保存） */
@@ -8,9 +9,10 @@ export function generateReport(
   meta: { schoolName: string; cohort: string },
   now: Date,
   studentsData: AnonymizedStudent[],
+  cleanIssues?: CleanedIssue[],
 ): Report {
   const pad = (n: number) => String(n).padStart(2, '0');
-  return {
+  const report: Report = {
     title: '走访参考报告',
     schoolName: meta.schoolName,
     cohort: meta.cohort,
@@ -19,4 +21,6 @@ export function generateReport(
     students: result.students,
     studentsData,
   };
+  if (cleanIssues && cleanIssues.length > 0) report.cleanIssues = cleanIssues;
+  return report;
 }

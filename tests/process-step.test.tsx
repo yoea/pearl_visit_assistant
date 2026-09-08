@@ -150,11 +150,48 @@ describe('ProcessStep（脱敏及检查合并页，安全红线）', () => {
         nameIndex: new Map([['student-001', '王小明']]),
       },
     });
+    expect(screen.getByText('资料填写校验')).toBeTruthy();
     expect(screen.getByText('数字校验（身高/体重/收入/负债等）')).toBeTruthy();
     expect(screen.getByText('发现 2 处疑似填写错误（1 名学生），请走访时重点核实：')).toBeTruthy();
     expect(screen.getAllByText(/student-001（王小明）/).length).toBeGreaterThan(0);
     expect(screen.getByText(/体重：105kg/)).toBeTruthy();
     expect(screen.getByText(/负债情况：8.00元/)).toBeTruthy();
     expect(screen.getAllByText('疑似填写错误待核实')).toHaveLength(2);
+  });
+
+  it('敏感信息误填（cleanIssues）展示 + 导出按钮', () => {
+    const issueStudent: AnonymizedStudent = {
+      anonymousId: 'student-002', gender: '女', ethnicity: '汉族', householdType: '农村',
+      height: null, weight: null, healthStatus: '健康', difficultyLevel: null,
+      enrollmentStatus: null, province: '云南省', city: '曲靖市', county: '会泽县',
+      ancestralHome: null, distanceToSchoolKm: 8, zhongkaoFullScore: 820, zhongkaoScore: 701,
+      admissionRankBand: '15%-30%', gradeSize: 923,
+      familySituation: '母亲患心脏病', visitMethod: '入户家访', visitSummary: '收入单一',
+      awardsAndInterests: '阅读', applicationReason: '家庭困难', approvalComment: null,
+      housingStatus: '自建房', transportation: '无',
+      annualIncome: 30000, annualIncomeNote: null, perCapitaIncome: 8000,
+      schoolChildrenCount: 2, difficultyReason: '母亲心脏病', elderlySupportStatus: '4人',
+      elderlySupportNote: null, debtStatus: '5万元', debtNote: null,
+    };
+    renderStep({
+      output: {
+        students: [issueStudent],
+        stats: {
+          rawStudentCount: 1, rawFieldCount: 0, sensitiveFieldCount: 0,
+          droppedFieldCount: 0, generalizedFieldCount: 0, sentFieldCount: 0,
+        },
+        nameIndex: new Map([['student-002', '李四']]),
+      },
+      cleanIssues: [{
+        studentId: 'student-002', fieldLabel: '籍贯',
+        originalMasked: 'G65****83', note: '整项疑似为敏感信息，已置空（不发送残缺数据）',
+      }],
+    });
+    expect(screen.getByText(/敏感信息误填（已自动清除 1 处）/)).toBeTruthy();
+    expect(screen.getByText(/student-002（李四）/)).toBeTruthy();
+    expect(screen.getByText((c: string) => c.includes('籍贯：G65****83'))).toBeTruthy();
+    // 导出按钮存在（问题存在时可用）
+    const exportBtn = screen.getByRole('button', { name: /导出填写校验问题表/ }) as HTMLButtonElement;
+    expect(exportBtn.disabled).toBe(false);
   });
 });

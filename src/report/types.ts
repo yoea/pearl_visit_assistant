@@ -1,5 +1,6 @@
 import type { SchoolAnalysis, StudentAnalysis } from '../analysis/provider';
 import type { AnonymizedStudent } from '../types/student';
+import type { CleanedIssue } from '../security/auto-clean';
 
 export interface Report {
   title: string;
@@ -10,4 +11,6 @@ export interface Report {
   students: StudentAnalysis[];
   /** 本地脱敏学生数据（基本信息表渲染用）。仅内存引用，绝不序列化到报告文件外 */
   studentsData: AnonymizedStudent[];
+  /** 发送前自动清洗的敏感误填记录（供报告「资料填写问题」展示；值为掩码） */
+  cleanIssues?: CleanedIssue[];
 }
