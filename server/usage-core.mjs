@@ -277,8 +277,9 @@ export function statsHtml(s) {
     <tr><td>输出 token（completion）</td><td>${fmt(s.completionTokens)}</td></tr>
     <tr><td>缓存命中 token</td><td>${fmt(s.cacheHitTokens)}</td></tr>
   </table>
-  <h2>每日使用趋势</h2>
+  <h2>每日使用趋势（当日全部事件合计）</h2>
   <table>${bars || '<tr><td class="muted">暂无数据</td></tr>'}</table>
+  <p class="muted" style="margin-top:6px">注：柱值 = 当日发生的全部动作次数（打开/上传/分析/下载/搜索各计 1 次），不是上方单个分类卡的数值。</p>
   <h2>事件类型分布</h2>
   <table><tr><th>事件</th><th>次数</th></tr>
     <tr><td>open</td><td>${fmt(s.opens)}</td></tr>

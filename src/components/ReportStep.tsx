@@ -239,6 +239,9 @@ export default function ReportStep({
     return () => clearTimeout(t);
   }, [query]);
 
+  // 「其他格式」下载菜单开合状态
+  const [showMoreFormats, setShowMoreFormats] = useState(false);
+
   /** 打开学生信息模态框（存在该生才打开） */
   const openStudent = (id: string | null) => {
     if (id && report.students.some((s) => s.studentId === id)) setModalId(id);
@@ -368,20 +371,40 @@ export default function ReportStep({
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={downloadHtml}>⬇ 下载报告（单文件 HTML，推荐）</Button>
-              <Button variant="secondary" onClick={downloadPdf}>下载 PDF</Button>
-              <button
-                type="button"
-                onClick={download}
-                className="text-xs text-slate-400 underline-offset-2 transition-colors hover:text-emerald-700 hover:underline"
-                title="Markdown 纯文本版（适合复制到笔记工具）"
-              >
-                Markdown 纯文本版
-              </button>
+              <Button onClick={downloadHtml}>⬇ 下载报告（HTML，推荐）</Button>
+              {/* 其他格式：PDF / Markdown 收进二级菜单 */}
+              <div className="relative">
+                <Button variant="secondary" onClick={() => setShowMoreFormats(!showMoreFormats)}>
+                  其他格式 ▾
+                </Button>
+                {showMoreFormats && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowMoreFormats(false)} />
+                    <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => { setShowMoreFormats(false); downloadPdf(); }}
+                        className="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-emerald-50"
+                      >
+                        下载 PDF
+                        <span className="text-[10px] text-slate-400">打印版 · 每生一页</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowMoreFormats(false); download(); }}
+                        className="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-emerald-50"
+                      >
+                        Markdown 纯文本
+                        <span className="text-[10px] text-slate-400">复制到笔记</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <Button variant="secondary" onClick={onReset}>开始新的分析</Button>
             </div>
             <p className="max-w-xs text-right text-xs leading-relaxed text-slate-400">
-              推荐 HTML：与页面排版一致，手机/电脑直接打开；PDF 请在弹出窗口中选择「另存为 PDF」。
+              推荐 HTML：与页面排版一致，手机/电脑直接打开，离线可用。
             </p>
           </div>
         </div>
