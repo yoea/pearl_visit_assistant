@@ -185,28 +185,34 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   .guide { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; background: #fff; }
   .guide h4 { margin: 0 0 6px; font-size: 13px; color: #334155; }
   @media print {
-    /* A4 打印优化：缩小字号行距，节省空白 */
-    body { background: #fff; font-size: 12px; line-height: 1.55; }
-    .page { padding: 8px 6px; }
-    .banner { padding: 10px 14px; margin-bottom: 10px; }
-    .banner h1 { font-size: 17px; }
-    .card { padding: 10px 14px; margin-bottom: 10px; }
-    .card h2 { font-size: 14px; margin: 0 0 8px; }
-    .card h3 { font-size: 13px; margin: 10px 0 5px; }
-    .card h4 { font-size: 12px; margin: 9px 0 4px; }
-    .student { padding: 8px 12px; margin: 0; }
-    .student h3 { font-size: 13px; }
-    .textcard, .factor, .card-warn, .card-amber, .banner-warn { padding: 6px 10px; }
-    table.info { font-size: 11px; }
-    table.info td { padding: 2px 6px; }
-    .bar-label { font-size: 11px; }
-    .bar-count { font-size: 11px; }
-    .bar-track { height: 10px; }
-    /* 每个学生强制新起一页（A4 一页一人） */
-    .student { break-before: page; }
+    /* A4 打印优化策略：
+       ① 大容器（.card/.student）允许跨页流动——绝不用 break-inside: avoid 硬塞，
+          否则首页不满时整个大卡被后移 → 大片空白；
+       ② 只对小块（文本卡/因素/警示块）防截断，标题防孤行（break-after: avoid）；
+       ③ 每个学生仍从新页开始（first 接排首页，顺势填满不浪费）；字号行距紧凑。 */
+    body { background: #fff; font-size: 11.5px; line-height: 1.5; }
+    .page { padding: 6px; }
+    .banner { padding: 9px 13px; margin-bottom: 8px; break-inside: avoid; }
+    .banner h1 { font-size: 16px; margin: 0; }
+    .banner p { margin: 2px 0 0; }
+    .card { padding: 8px 12px; margin-bottom: 6px; border: none; background: none; box-shadow: none; }
+    .card h2 { font-size: 13px; margin: 0 0 6px; padding-bottom: 3px; border-bottom: 1px solid #e2e8f0; }
+    h3, h4 { break-after: avoid; }
+    .card h3 { font-size: 12px; margin: 8px 0 4px; }
+    .card h4 { font-size: 11.5px; margin: 6px 0 3px; }
+    .student { padding: 4px 0 10px; margin: 0; break-before: page; }
     .student:first-of-type { break-before: auto; }
-    /* 其余区块避免跨页截断 */
-    .card, .banner-warn, .card-warn, .card-amber, .factor { break-inside: avoid; }
+    .student h3 { font-size: 12.5px; margin: 0 0 4px; padding-bottom: 3px; border-bottom: 1px solid #e2e8f0; }
+    .textcard, .factor, .card-warn, .card-amber, .banner-warn, .guide { padding: 5px 9px; margin: 3px 0; break-inside: avoid; }
+    p, li { font-size: 11.5px; margin: 2px 0; }
+    /* 基本情况表格紧凑：窄 label 列 + 内容列，减少空置感 */
+    table.info { font-size: 10.5px; border-collapse: collapse; }
+    table.info td { padding: 1px 4px; border: none; }
+    table.info tr { border-bottom: 1px solid #f1f5f9; }
+    table.info td:first-child { width: 112px; }
+    .bar-label { font-size: 10.5px; }
+    .bar-count { font-size: 10.5px; }
+    .bar-track { height: 8px; }
     /* 打印时强制展开基本情况折叠（[hidden] 优先级低于本规则：本规则置于其后） */
     [hidden] { display: block !important; }
     .fold-toggle { display: none; }

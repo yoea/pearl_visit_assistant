@@ -371,7 +371,9 @@ export default function ReportStep({
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={downloadHtml}>⬇ 下载报告（HTML，推荐）</Button>
+              <span title="与页面排版一致，手机/电脑直接打开，离线可用">
+                <Button onClick={downloadHtml}>⬇ 下载报告（HTML，推荐）</Button>
+              </span>
               {/* 其他格式：PDF / Markdown 收进二级菜单 */}
               <div className="relative">
                 <Button variant="secondary" onClick={() => setShowMoreFormats(!showMoreFormats)}>
@@ -403,9 +405,6 @@ export default function ReportStep({
               </div>
               <Button variant="secondary" onClick={onReset}>开始新的分析</Button>
             </div>
-            <p className="max-w-xs text-right text-xs leading-relaxed text-slate-400">
-              推荐 HTML：与页面排版一致，手机/电脑直接打开，离线可用。
-            </p>
           </div>
         </div>
         {/* token 用量统计（仅真实 AI）：本次调用 + 本机累计，便于统计 API 消耗 */}
