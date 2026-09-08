@@ -21,8 +21,9 @@ function rnd() {
 }
 function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
 
-const START = Date.parse('2026-08-20T00:00:00');
-const END = Date.parse('2026-09-08T23:59:59');
+// 平台 2026-09-02 才上线：演示数据从该日起分布（显式 UTC，避免盒子本地时区偏移）
+const START = Date.parse('2026-09-02T00:00:00Z');
+const END = Date.parse('2026-09-08T23:59:59Z');
 function ts() { return new Date(START + rnd() * (END - START)).toISOString(); }
 
 const clients = Array.from({ length: TARGET.clients }, (_, i) => `demo-${String(i + 1).padStart(2, '0')}`);
