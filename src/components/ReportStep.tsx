@@ -11,6 +11,7 @@ import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeri
 import { APP_VERSION } from '../app-config';
 import { reportReportDownloaded, reportStudentSearch } from '../stats/usage-reporter';
 import { countReviewStatuses, reviewStatusTone, REVIEW_STATUS_COLORS } from '../report/review-status';
+import { countDifficultyReasons } from '../report/difficulty-reason';
 import { exportIssuesCsv } from '../report/issue-csv';
 import Card from './ui/Card';
 import Button from './ui/Button';
@@ -346,6 +347,8 @@ export default function ReportStep({
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => ({ label, count }));
   }, [report.studentsData]);
 
+  // 困难原因分布（多选拆分统计，学校整体情况饼图用）
+  const reasonItems = useMemo(() => countDifficultyReasons(report.studentsData), [report.studentsData]);
   const factorChart = useMemo(() => {
     const counts: Record<string, number> = { high: 0, medium: 0, low: 0 };
     for (const g of report.students) {
@@ -541,6 +544,24 @@ export default function ReportStep({
                 <div className="mt-2"><MiniBarChart items={factorChart} color="bg-amber-400" /></div>
               </div>
             )}
+          </div>
+        )}
+        {/* 困难原因分布（申请材料「困难原因」字段，多选拆分统计） */}
+        {reasonItems.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-6 rounded-lg bg-slate-50 p-4">
+            <div>
+              <p className="text-xs font-medium text-slate-500">困难原因分布</p>
+              <div className="mt-2"><DonutChart items={reasonItems} /></div>
+            </div>
+            <ul className="space-y-1">
+              {reasonItems.map((i) => (
+                <li key={i.label} className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-600">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: REVIEW_STATUS_COLORS[reasonItems.indexOf(i) % REVIEW_STATUS_COLORS.length] }} />
+                  <span>{i.label}</span>
+                  <span className="w-9 text-right font-medium">{i.count} 人</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         {sa.difficultyPatterns.length > 0 && (

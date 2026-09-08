@@ -4,6 +4,7 @@ import type { AnonymizedStudent } from '../types/student';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues } from '../anonymization/numeric-validation';
 import { countReviewStatuses } from './review-status';
+import { countDifficultyReasons } from './difficulty-reason';
 
 /**
  * 动态文本行转义：行首的「#」「*」「>」「-」标记与换行可能破坏 Markdown 结构
@@ -81,6 +82,14 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
   lines.push('');
   lines.push(escapeMdLine(sa.overview));
   lines.push('');
+  // 困难原因分布（材料「困难原因」字段，多选拆分统计）
+  const reasonItems = countDifficultyReasons(report.studentsData);
+  if (reasonItems.length > 0) {
+    lines.push('**困难原因分布**（申请材料填写，多选已拆分）');
+    lines.push('');
+    for (const i of reasonItems) lines.push(`- ${escapeMdLine(i.label)}：${i.count} 人`);
+    lines.push('');
+  }
   lines.push('### 1. 困难类型分布');
   lines.push('');
   for (const p of sa.difficultyPatterns) lines.push(`- ${escapeMdLine(p)}`);

@@ -4,6 +4,8 @@ import type { AnonymizedStudent } from '../types/student';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues } from '../anonymization/numeric-validation';
 import { countReviewStatuses } from './review-status';
+import { countDifficultyReasons } from './difficulty-reason';
+import { REVIEW_STATUS_COLORS } from './review-status';
 
 /**
  * 报告 → 单文件 HTML（完全自包含：内联 CSS + CSS 柱状图，无任何外部资源，离线可打开）。
@@ -259,6 +261,16 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   <div class="card">
     <h2>一、学校整体情况</h2>
     <p>${escapeHtml(sa.overview)}</p>
+    ${(() => {
+      const reasons = countDifficultyReasons(report.studentsData);
+      if (reasons.length === 0) return '';
+      const rows = reasons.map((i, idx) => `
+        <tr><td style="padding:2px 8px 2px 0"><span style="display:inline-block;width:10px;height:10px;border-radius:99px;background:${REVIEW_STATUS_COLORS[idx % REVIEW_STATUS_COLORS.length]};margin-right:6px"></span>${escapeHtml(i.label)}</td>
+        <td style="padding:2px 8px;text-align:right">${i.count} 人</td></tr>`).join('');
+      return `
+    <h3>困难原因分布（申请材料填写，多选已拆分）</h3>
+    <table style="width:auto;min-width:280px;border-collapse:collapse">${rows}</table>`;
+    })()}
     <h3>困难类型分布</h3>
     ${levelChart.length > 0 ? cssBarChart(levelChart) : '<p class="empty">材料中未填写困难度，无法统计。</p>'}
     ${factorChart.length > 0 ? `<h3>困难因素重要性分布</h3>${cssBarChart(factorChart)}` : ''}
