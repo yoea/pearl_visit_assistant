@@ -70,12 +70,14 @@ function estimateDuration(n: number): string {
 }
 
 export default function ProcessStep({
-  output, scan, mappedColumns, meta, providerName, modelName, analyzing, error, onAnalyze, onReset,
+  output, scan, mappedColumns, meta, providerName, modelName, autoCleaned, analyzing, error, onAnalyze, onReset,
 }: {
   output: AnonymizationOutput;
   /** scanned 阶段一定携带扫描结果；anonymized 半态（自动流转的瞬时态）为 undefined，显示防御态 */
   scan: SecurityScanResult | undefined;
   mappedColumns: MappedColumn[];
+  /** 自动清洗的敏感字段数（发送前自动剥除；>0 时检查页提示） */
+  autoCleaned?: number;
   meta: { schoolName: string; cohort: string };
   /** 分析模式：'mock'（本地模拟，数据不出本机）| 'deepseek'（真实 AI）——绝不静默假装真实 AI */
   providerName: string;
@@ -112,7 +114,8 @@ export default function ProcessStep({
         <h2 className="text-lg font-semibold text-slate-800">分析前检查确认</h2>
         <p className="mt-1 text-sm text-slate-500">
           在调用 AI 之前，对最终发送数据（共 {output.students.length} 名学生的匿名数据）再做一次敏感信息扫描。
-          如发现疑似敏感信息将阻止发送，且不允许绕过。系统不会自动发送，请确认后手动开始。
+          混入的证件号/电话等敏感片段会被自动清除后继续；无法自动处理的命中会阻止发送。
+          系统不会自动发送，请确认后手动开始。
         </p>
 
         {!scan && (
@@ -161,6 +164,12 @@ export default function ProcessStep({
           <>
             <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
               <p className="text-sm font-medium text-emerald-800">✓ 未发现禁止发送的个人身份信息，可以开始分析</p>
+              {autoCleaned != null && autoCleaned > 0 && (
+                <p className="mt-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">
+                  ⚠ 已自动清除 {autoCleaned} 处疑似混入的敏感信息（如证件号/电话等）。
+                  清除结果可在下方「匿名数据预览」查看；如有误伤请修正源表后重新导入。
+                </p>
+              )}
             </div>
 
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">

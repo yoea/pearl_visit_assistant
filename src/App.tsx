@@ -5,6 +5,7 @@ import { mapFields } from './anonymization/field-mapper';
 import { rawStore } from './anonymization/raw-store';
 import { anonymize } from './anonymization/anonymizer';
 import { scanPayload } from './security/scanner';
+import { autoCleanStudents } from './security/auto-clean';
 import { createAnalysisService } from './analysis/provider-factory';
 import { AnalysisClientError, SecurityViolationError } from './analysis/analysis-service';
 import { generateReport } from './report/generator';
@@ -99,9 +100,23 @@ export default function App() {
       nameBlacklistRef.current = blacklist;
       const output = anonymize(rawStore.snapshot(), mapping.mappedColumns, blacklist);
       dispatch({ type: 'ANONYMIZE_SUCCEEDED', output });
-      // 扫描失败不是异常：仍 dispatch SCAN_SUCCEEDED，检查页显示红区并阻止发送
-      const scan = scanPayload({ meta: metaRef.current, students: output.students }, blacklist);
-      dispatch({ type: 'SCAN_SUCCEEDED', output, scan });
+      // 扫描失败不直接阻止：先自动清洗可剥除的敏感片段（证件/电话/邮箱/名单姓名等），
+      // 清洗后重扫通过 → 继续（检查页可见清洗提示）；仍有无法自动处理的命中 → 红区阻止
+      let scan = scanPayload({ meta: metaRef.current, students: output.students }, blacklist);
+      let finalOutput = output;
+      let autoCleaned: number | undefined;
+      if (!scan.passed) {
+        const clean = autoCleanStudents(output.students, scan.findings, blacklist);
+        if (clean.cleanedCount > 0) {
+          const rescan = scanPayload({ meta: metaRef.current, students: clean.students }, blacklist);
+          if (rescan.passed) {
+            finalOutput = { ...output, students: clean.students };
+            scan = rescan;
+            autoCleaned = clean.cleanedCount;
+          }
+        }
+      }
+      dispatch({ type: 'SCAN_SUCCEEDED', output: finalOutput, scan, autoCleaned });
     } catch {
       // 意外异常兜底：固定文案 + 重置，绝不含技术错误细节
       rawStore.clear();
@@ -270,6 +285,7 @@ export default function App() {
           <ProcessStep
             output={state.output}
             scan={'scan' in state ? state.scan : undefined}
+            autoCleaned={'autoCleaned' in state ? state.autoCleaned : undefined}
             mappedColumns={mappingRef.current}
             meta={metaRef.current}
             providerName={analysisService.providerName}

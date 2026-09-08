@@ -20,19 +20,20 @@ export type PipelineState =
   | { stage: 'idle' }
   | (ParsedState & { stage: 'parsed' })
   | { stage: 'anonymized'; output: AnonymizationOutput }
-  | { stage: 'scanned'; output: AnonymizationOutput; scan: SecurityScanResult }
+  | { stage: 'scanned'; output: AnonymizationOutput; scan: SecurityScanResult; autoCleaned?: number }
   | {
       stage: 'analyzed';
       output: AnonymizationOutput;
       scan: SecurityScanResult;
       result: AnalysisResult;
       report: Report;
+      autoCleaned?: number;
     };
 
 export type PipelineEvent =
   | { type: 'PARSE_SUCCEEDED'; parsed: ParsedState }
   | { type: 'ANONYMIZE_SUCCEEDED'; output: AnonymizationOutput }
-  | { type: 'SCAN_SUCCEEDED'; output: AnonymizationOutput; scan: SecurityScanResult }
+  | { type: 'SCAN_SUCCEEDED'; output: AnonymizationOutput; scan: SecurityScanResult; autoCleaned?: number }
   | {
       type: 'ANALYSIS_SUCCEEDED';
       output: AnonymizationOutput;

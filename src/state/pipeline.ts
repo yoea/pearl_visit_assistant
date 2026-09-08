@@ -12,16 +12,19 @@ export function pipelineReducer(state: PipelineState, event: PipelineEvent): Pip
       return state.stage === 'parsed' ? { stage: 'anonymized', output: event.output } : state;
     case 'SCAN_SUCCEEDED':
       return state.stage === 'anonymized'
-        ? { stage: 'scanned', output: event.output, scan: event.scan }
+        ? { stage: 'scanned', output: event.output, scan: event.scan, autoCleaned: event.autoCleaned }
         : state;
     case 'ANALYSIS_SUCCEEDED':
       return state.stage === 'scanned'
-        ? { stage: 'analyzed', output: event.output, scan: event.scan, result: event.result, report: event.report }
+        ? {
+            stage: 'analyzed', output: event.output, scan: event.scan,
+            result: event.result, report: event.report, autoCleaned: state.autoCleaned,
+          }
         : state;
     case 'RETURN_TO_SCAN':
       // 步骤条从报告页（3）跳回「脱敏及检查」（2）：复用已脱敏数据回到检查确认页
       return state.stage === 'analyzed'
-        ? { stage: 'scanned', output: state.output, scan: state.scan }
+        ? { stage: 'scanned', output: state.output, scan: state.scan, autoCleaned: state.autoCleaned }
         : state;
     case 'RESET':
       return { stage: 'idle' };
