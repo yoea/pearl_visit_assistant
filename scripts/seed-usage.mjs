@@ -22,9 +22,33 @@ function rnd() {
 function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
 
 // 平台 2026-09-02 才上线：演示数据从该日起分布（显式 UTC，避免盒子本地时区偏移）
-const START = Date.parse('2026-09-02T00:00:00Z');
-const END = Date.parse('2026-09-08T23:59:59Z');
-function ts() { return new Date(START + rnd() * (END - START)).toISOString(); }
+// 日期分布：9/2 发布当天与次日最多；9/5-6 周末使用率低（权重按天）
+const DAY_WEIGHTS = [
+  { day: '2026-09-02', w: 3 },  // 发布日
+  { day: '2026-09-03', w: 3 },
+  { day: '2026-09-04', w: 1.5 },
+  { day: '2026-09-05', w: 0.4 }, // 周六
+  { day: '2026-09-06', w: 0.4 }, // 周日
+  { day: '2026-09-07', w: 1.5 },
+  { day: '2026-09-08', w: 1.5 },
+];
+const TOTAL_W = DAY_WEIGHTS.reduce((a, d) => a + d.w, 0);
+function pickDay() {
+  let r = rnd() * TOTAL_W;
+  for (const d of DAY_WEIGHTS) {
+    r -= d.w;
+    if (r <= 0) return d.day;
+  }
+  return DAY_WEIGHTS[DAY_WEIGHTS.length - 1].day;
+}
+/** 北京时间 8:00-20:00 的随机时刻（UTC 同日上午，切片日期不变） */
+function ts() {
+  const day = pickDay();
+  const hh = String(Math.floor(rnd() * 12)).padStart(2, '0');
+  const mm = String(Math.floor(rnd() * 60)).padStart(2, '0');
+  const ss = String(Math.floor(rnd() * 60)).padStart(2, '0');
+  return `${day}T${hh}:${mm}:${ss}Z`;
+}
 
 const clients = Array.from({ length: TARGET.clients }, (_, i) => `demo-${String(i + 1).padStart(2, '0')}`);
 const VERSION = 'v1.1.0';
