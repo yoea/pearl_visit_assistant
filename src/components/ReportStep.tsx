@@ -10,6 +10,7 @@ import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeric-validation';
 import { APP_VERSION } from '../app-config';
 import { reportReportDownloaded, reportStudentSearch } from '../stats/usage-reporter';
+import { countReviewStatuses, reviewStatusTone, REVIEW_STATUS_COLORS } from '../report/review-status';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Badge from './ui/Badge';
@@ -42,11 +43,29 @@ function MiniBarChart({ items, color }: { items: { label: string; count: number 
   );
 }
 
+/** 审核状态环形饼图（CSS conic-gradient，零依赖）；items 为空返回 null */
+function DonutChart({ items }: { items: { label: string; count: number }[] }) {
+  const total = items.reduce((a, i) => a + i.count, 0);
+  if (total <= 0) return null;
+  let acc = 0;
+  const stops = items.map((i, idx) => {
+    const from = (acc / total) * 360;
+    acc += i.count;
+    const to = (acc / total) * 360;
+    return `${REVIEW_STATUS_COLORS[idx % REVIEW_STATUS_COLORS.length]} ${from.toFixed(2)}deg ${to.toFixed(2)}deg`;
+  }).join(', ');
+  return (
+    <div className="relative h-36 w-36 shrink-0 rounded-full" style={{ background: `conic-gradient(${stops})` }}>
+      <div className="absolute inset-[24%] rounded-full bg-white" />
+    </div>
+  );
+}
+
 /** 本地学生数据 → 基本信息行（null/空串过滤，anonymousId 不展示） */
 function basicInfoOf(s: AnonymizedStudent): { key: string; label: string; value: string }[] {
   const out: { key: string; label: string; value: string }[] = [];
   for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
-    if (k === 'anonymousId') continue;
+    if (k === 'anonymousId' || k === 'reviewStatus') continue; // 审核状态由徽章/饼图呈现
     const v = s[k];
     if (v == null || v === '') continue;
     out.push({ key: k, label: STUDENT_FIELD_LABELS[k], value: String(v) });
@@ -368,6 +387,16 @@ export default function ReportStep({
               走访参考报告 — {report.schoolName}（{report.cohort}）
             </h2>
             <p className="mt-1 text-xs text-slate-500">生成时间：{report.generatedAt} · 仅存于当前页面内存</p>
+            {/* 审核安排：审核人/走访人（来自静态安排表；无匹配则不显示） */}
+            {report.audit && (
+              <p className="mt-2 inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                <span className="font-medium text-slate-700">本学校审核安排</span>
+                <span>审核人：{report.audit.auditor}</span>
+                <span>·</span>
+                <span>走访人：{report.audit.visitor1}</span>
+                {report.audit.visitor2 && (<><span>/</span><span>{report.audit.visitor2}</span></>)}
+              </p>
+            )}
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -554,6 +583,41 @@ export default function ReportStep({
         </section>
       </Card>
 
+      {/* 审核状态概览（总人数 + 状态饼图；数据来自导入表格的「状态」列快照） */}
+      {(() => {
+        const statusCounts = countReviewStatuses(report.studentsData);
+        if (statusCounts.length === 0) return null;
+        return (
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-800">
+                  审核状态概览
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  本批次共 {report.studentsData.length} 名学生 · 已标注审核状态 {statusCounts.reduce((a, i) => a + i.count, 0)} 人
+                </p>
+              </div>
+              <div className="flex items-center gap-5">
+                <DonutChart items={statusCounts.map((i) => ({ label: i.status, count: i.count }))} />
+                <ul className="space-y-1.5">
+                  {statusCounts.map((i) => (
+                    <li key={i.status} className="flex items-center gap-2 text-sm text-slate-600">
+                      <Badge tone={reviewStatusTone(i.status)}>{i.status}</Badge>
+                      <span className="w-8 text-right font-medium">{i.count} 人</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <p className="mt-3 rounded-md bg-slate-50 px-3 py-1.5 text-xs leading-relaxed text-slate-500">
+              注：上表状态取自导入表格时的数据快照，并非实时状态；若名单已在系统中流转（草稿→初审→复审等），
+              请以基金会的实时审核记录为准，走访时建议一并确认当前状态。
+            </p>
+          </Card>
+        );
+      })()}
+
       {/* 资料填写问题（发送前自动清除的敏感误填；需走访时向学生核实） */}
       {report.cleanIssues && report.cleanIssues.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4">
@@ -586,9 +650,13 @@ export default function ReportStep({
                 onClick={() => setOpen(open === g.studentId ? null : g.studentId)}
                 className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                <span className="flex items-center gap-2">
+                <span className="flex flex-wrap items-center gap-2">
                   {nameIndex.get(g.studentId) ?? g.studentId}
                   <span className="text-xs font-normal text-slate-400">{g.studentId}</span>
+                  {(() => {
+                    const rs = dataById.get(g.studentId)?.reviewStatus?.trim();
+                    return rs ? <Badge tone={reviewStatusTone(rs)}>{rs}</Badge> : null;
+                  })()}
                   <Badge tone="green">{g.mainDifficultyFactors.filter((f) => f.importance === 'high').length} high</Badge>
                 </span>
                 <span className="text-xs text-slate-400">{open === g.studentId ? '收起' : '展开'}</span>
@@ -635,9 +703,13 @@ export default function ReportStep({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
-              <p className="text-sm font-semibold text-slate-800">
+              <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
                 {nameIndex.get(modalId) ?? modalId}
-                <span className="ml-2 text-xs font-normal text-slate-400">{modalId}</span>
+                <span className="text-xs font-normal text-slate-400">{modalId}</span>
+                {(() => {
+                  const rs = dataById.get(modalId)?.reviewStatus?.trim();
+                  return rs ? <Badge tone={reviewStatusTone(rs)}>{rs}</Badge> : null;
+                })()}
               </p>
               <button
                 type="button"

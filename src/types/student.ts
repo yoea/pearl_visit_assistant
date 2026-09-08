@@ -60,6 +60,8 @@ export interface AnonymizedStudent {
   elderlySupportNote: string | null; // 已清洗
   debtStatus: string | null;
   debtNote: string | null; // 已清洗
+  /** 审核状态（草稿/复审中等）：本地保留，用于报告状态标注与分布图；绝不发送给 AI */
+  reviewStatus?: string | null;
 }
 
 export interface AnonymizationStats {

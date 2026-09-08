@@ -32,5 +32,5 @@ export const STUDENT_FIELD_LABELS: Record<keyof AnonymizedStudent, string> = {
   annualIncome: '年收入(元)', annualIncomeNote: '年收入说明', perCapitaIncome: '人均年收入(元)',
   schoolChildrenCount: '上学子女人数', difficultyReason: '困难原因',
   elderlySupportStatus: '需赡养老人情况', elderlySupportNote: '需赡养老人情况说明',
-  debtStatus: '负债情况', debtNote: '负债情况说明',
+  debtStatus: '负债情况', debtNote: '负债情况说明', reviewStatus: '审核状态',
 };

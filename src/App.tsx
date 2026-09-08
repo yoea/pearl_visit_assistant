@@ -9,6 +9,7 @@ import { autoCleanStudents, type CleanedIssue } from './security/auto-clean';
 import { createAnalysisService } from './analysis/provider-factory';
 import { AnalysisClientError, SecurityViolationError } from './analysis/analysis-service';
 import { generateReport } from './report/generator';
+import { findAuditAssignment } from './data/audit-assignments';
 import { InMemoryUsageStats } from './stats/usage-stats';
 import { recordTokenUsage, type CumulativeTokenUsage } from './stats/token-usage-store';
 import { saveReport, loadReport, deleteReport } from './stats/report-store';
@@ -138,7 +139,10 @@ export default function App() {
     try {
       const request = { meta: metaRef.current, students: state.output.students };
       const result = await analysisService.analyze(request, nameBlacklistRef.current);
-      const report = generateReport(result, metaRef.current, new Date(), state.output.students, state.cleanIssues);
+      const report = generateReport(
+        result, metaRef.current, new Date(), state.output.students,
+        state.cleanIssues, findAuditAssignment(metaRef.current.schoolName),
+      );
       usageStats.record('analysisSucceeded');
       // token 累计：仅真实 AI 有 usage；本机持久化只存计数数字（见 token-usage-store 白名单）
       const cumulative = result.usage ? recordTokenUsage(result.usage) : undefined;

@@ -23,7 +23,7 @@ const NUMBER_KEYS = [
 ] as const satisfies readonly (keyof AnonymizedStudent)[];
 
 type NumericField = {
-  [K in keyof AnonymizedStudent]: AnonymizedStudent[K] extends number | null ? K : never;
+  [K in keyof AnonymizedStudent]-?: AnonymizedStudent[K] extends number | null ? K : never;
 }[keyof AnonymizedStudent];
 type NumberKeysCovered = NumericField extends (typeof NUMBER_KEYS)[number] ? true : never;
 type NumberKeysComplete = (typeof NUMBER_KEYS)[number] extends NumericField ? true : never;
@@ -109,6 +109,17 @@ export function anonymize(
         const grade = gradeHeader ? toNumber(rec.values[gradeHeader]) : null;
         setField('admissionRankBand', rank != null && grade != null && rank > 0 && grade > 0 ? rankBand(rank, grade) : null);
       }
+    }
+
+    // 审核状态（草稿/复审中等）：识别「状态」列本地保留（绝不发送——不在 SENT_FIELDS；
+    // 取值后该列照常 drop，不影响发送白名单）
+    const statusCol = mappedColumns.find((c) => {
+      const h = c.normalizedHeader.replace(/[（(].*$/, '').trim();
+      return h === '状态' || h === '审核状态';
+    });
+    if (statusCol) {
+      const status = toText(rec.values[statusCol.header]);
+      if (status) student.reviewStatus = status;
     }
 
     return student;

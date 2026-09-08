@@ -3,6 +3,7 @@ import type { Report } from './types';
 import type { AnonymizedStudent } from '../types/student';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues } from '../anonymization/numeric-validation';
+import { countReviewStatuses } from './review-status';
 
 /**
  * 报告 → 单文件 HTML（完全自包含：内联 CSS + CSS 柱状图，无任何外部资源，离线可打开）。
@@ -23,7 +24,7 @@ function basicInfoRows(s: AnonymizedStudent): string {
   // 数字校验（与页面同一规则）：异常值后附「疑似填写错误待核实」标签
   const issueKeys = new Set(checkNumericIssues(s).map((i) => i.key));
   for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
-    if (k === 'anonymousId') continue;
+    if (k === 'anonymousId' || k === 'reviewStatus') continue;
     const v = s[k];
     if (v == null || v === '') continue;
     const badge = issueKeys.has(k)
@@ -85,6 +86,7 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     const display = nameIndex?.get(g.studentId) ?? g.studentId;
     const title = nameIndex?.has(g.studentId) ? `${display}（${g.studentId}）` : display;
     const local = dataById.get(g.studentId);
+    const reviewStatus = local?.reviewStatus?.trim();
     const highFactors = g.mainDifficultyFactors.filter((f) => f.importance === 'high');
     const factors = g.mainDifficultyFactors.map((f) => `
       <div class="factor">
@@ -95,7 +97,7 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
       `<li><span class="num">${i + 1}</span>${escapeHtml(q)}</li>`).join('');
     return `
 <section class="student">
-  <h3>${escapeHtml(title)}</h3>
+  <h3>${escapeHtml(title)}${reviewStatus ? ` <span class="tag tag-mid">审核状态：${escapeHtml(reviewStatus)}</span>` : ''}</h3>
   ${highFactors.length > 0
     ? `<div class="banner-warn">重点困难：${highFactors.map((f) =>
       `<span class="tag tag-high">${escapeHtml(f.factor)}</span>`).join('')}</div>`
@@ -239,7 +241,20 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   <div class="banner">
     <h1>走访参考报告 — ${escapeHtml(report.schoolName)}（${escapeHtml(report.cohort)}）</h1>
     <p>生成时间：${escapeHtml(report.generatedAt)} · 本报告基于脱敏后的申请材料生成，仅供走访参考，不构成任何资助结论。</p>
+    ${report.audit ? `<p>审核安排：审核人 ${escapeHtml(report.audit.auditor)} · 走访人 ${escapeHtml(report.audit.visitor1)}${report.audit.visitor2 ? ` / ${escapeHtml(report.audit.visitor2)}` : ''}</p>` : ''}
   </div>
+
+  ${(() => {
+    const sc = countReviewStatuses(report.studentsData);
+    if (sc.length === 0) return '';
+    return `
+  <div class="card" style="padding:14px 18px">
+    <h2 style="margin:0 0 8px">审核状态概览</h2>
+    <p style="margin:0 0 10px;font-size:13px">本批次共 ${report.studentsData.length} 名学生 · 已标注审核状态 ${sc.reduce((a, i) => a + i.count, 0)} 人</p>
+    <ul style="margin:0;padding-left:18px">${sc.map((i) => `<li style="font-size:13px;margin:2px 0">${escapeHtml(i.status)}：${i.count} 人</li>`).join('')}</ul>
+    <p style="margin:8px 0 0;font-size:12px;color:#94a3b8">注：上表状态取自导入表格时的数据快照，并非实时状态；名单若已在系统中流转，请以基金会实时审核记录为准。</p>
+  </div>`;
+  })()}
 
   <div class="card">
     <h2>一、学校整体情况</h2>

@@ -3,6 +3,7 @@ import type { Report } from './types';
 import type { AnonymizedStudent } from '../types/student';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues } from '../anonymization/numeric-validation';
+import { countReviewStatuses } from './review-status';
 
 /**
  * 动态文本行转义：行首的「#」「*」「>」「-」标记与换行可能破坏 Markdown 结构
@@ -19,7 +20,7 @@ function basicInfoLines(s: AnonymizedStudent): string[] {
   const lines: string[] = [];
   const issueKeys = new Set(checkNumericIssues(s).map((i) => i.key));
   for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
-    if (k === 'anonymousId') continue;
+    if (k === 'anonymousId' || k === 'reviewStatus') continue;
     const v = s[k];
     if (v == null || v === '') continue;
     const warn = issueKeys.has(k) ? ' ⚠ 疑似填写错误待核实' : '';
@@ -44,7 +45,22 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
   lines.push('');
   lines.push(`> 生成时间：${report.generatedAt}`);
   lines.push('> 说明：本报告基于脱敏后的申请材料生成，仅供走访参考，不构成任何资助结论。');
+  if (report.audit) {
+    const { auditor, visitor1, visitor2 } = report.audit;
+    lines.push(`> 审核安排：审核人 ${auditor} · 走访人 ${visitor1}${visitor2 ? ` / ${visitor2}` : ''}`);
+  }
   lines.push('');
+
+  // 审核状态概览（快照口径说明）
+  const statusCounts = countReviewStatuses(report.studentsData);
+  if (statusCounts.length > 0) {
+    lines.push(`本批次共 ${report.studentsData.length} 名学生，审核状态分布：`);
+    lines.push('');
+    for (const i of statusCounts) lines.push(`- ${i.status}：${i.count} 人`);
+    lines.push('');
+    lines.push('> 注：以上状态取自导入表格时的数据快照（非实时）；名单若已在系统中流转，请以基金会实时审核记录为准。');
+    lines.push('');
+  }
 
   // 资料填写问题（发送前自动清除的敏感误填；走访时需向学生核实）
   if (report.cleanIssues && report.cleanIssues.length > 0) {
@@ -99,6 +115,11 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
     const display = nameIndex?.get(g.studentId) ?? g.studentId;
     lines.push(`### ${escapeMdLine(display)}${nameIndex?.has(g.studentId) ? `（${g.studentId}）` : ''}`);
     lines.push('');
+    const reviewStatus = dataById.get(g.studentId)?.reviewStatus?.trim();
+    if (reviewStatus) {
+      lines.push(`> 审核状态：${escapeMdLine(reviewStatus)}`);
+      lines.push('');
+    }
     // 重点困难概览（high 因素，与页面横幅一致）
     const highFactors = g.mainDifficultyFactors.filter((f) => f.importance === 'high');
     if (highFactors.length > 0) {

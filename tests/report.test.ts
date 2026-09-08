@@ -58,6 +58,26 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(md).toContain('#### 6. 推荐面谈问题');
   });
 
+  it('报告含审核安排与审核状态概览（md 顶部快照说明 + 学生状态行）', async () => {
+    const withStatus = { ...sampleStudent, reviewStatus: '初审中' };
+    const result = await new MockAnalysisProvider().analyze({
+      meta, students: [withStatus],
+    } satisfies AnalysisRequest);
+    const report = generateReport(
+      result, meta, now, [withStatus], undefined,
+      { schoolName: '某中学', auditor: '尤怡华', visitor1: '钱鋆鸾', visitor2: '孙晓蕾' },
+    );
+    const md = reportToMarkdown(report, new Map([['student-001', '测试甲']]));
+    // 审核安排行
+    expect(md).toContain('审核安排：审核人 尤怡华 · 走访人 钱鋆鸾 / 孙晓蕾');
+    // 审核状态概览（总数 + 分布 + 快照注）
+    expect(md).toContain('本批次共 1 名学生，审核状态分布：');
+    expect(md).toContain('- 初审中：1 人');
+    expect(md).toContain('以上状态取自导入表格时的数据快照');
+    // 学生标题下状态行
+    expect(md).toContain('> 审核状态：初审中');
+  });
+
   it('Markdown 页脚含保密提示/版权/工具作者；学生节顺序与页面一致', async () => {
     const result = await new MockAnalysisProvider().analyze({
       meta, students: [sampleStudent],

@@ -21,7 +21,7 @@ export const SENT_FIELDS = [
 
 // 编译期不变量：恰 34 个字段，且覆盖 AnonymizedStudent 除 anonymousId 外全部字段
 type FieldCountIs34 = (typeof SENT_FIELDS)['length'] extends 34 ? true : never;
-type FieldsCovered = Exclude<keyof AnonymizedStudent, 'anonymousId'> extends (typeof SENT_FIELDS)[number] ? true : never;
+type FieldsCovered = Exclude<keyof AnonymizedStudent, 'anonymousId' | 'reviewStatus'> extends (typeof SENT_FIELDS)[number] ? true : never;
 export const _sentFieldsConsistency: FieldCountIs34 & FieldsCovered = true;
 
 export type WireStudentData = { [K in (typeof SENT_FIELDS)[number]]: AnonymizedStudent[K] };

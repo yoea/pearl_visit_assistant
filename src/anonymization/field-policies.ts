@@ -139,6 +139,6 @@ export function isKnownHeaderName(header: string): boolean {
 // 例外：'admissionRank' 是来源列 key，脱敏后写入 AnonymizedStudent.admissionRankBand（由 Task 7 处理）。
 type CanonicalKeyInStudent = CanonicalKey extends keyof AnonymizedStudent | 'admissionRank' ? true : never;
 // 反向检查：AnonymizedStudent 除合成字段（anonymousId/admissionRankBand）外，每个字段都必须有对应策略。
-type StudentFieldsCovered = Exclude<keyof AnonymizedStudent, 'anonymousId' | 'admissionRankBand'> extends CanonicalKey ? true : never;
+type StudentFieldsCovered = Exclude<keyof AnonymizedStudent, 'anonymousId' | 'admissionRankBand' | 'reviewStatus'> extends CanonicalKey ? true : never;
 
 export const _canonicalKeyConsistency: CanonicalKeyInStudent & StudentFieldsCovered = true;
