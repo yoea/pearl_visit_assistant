@@ -4,6 +4,8 @@ import type { AnonymizationOutput, AnonymizedStudent, MappedColumn } from '../ty
 import { ACTION_LABELS, DROP_REASON_LABELS, STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { SENT_FIELDS } from '../analysis/payload';
 import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeric-validation';
+import { rawStore } from '../anonymization/raw-store';
+import type { SecurityFinding } from '../security/scanner';
 import Card from './ui/Card';
 import StatCard from './ui/StatCard';
 import Button from './ui/Button';
@@ -43,6 +45,17 @@ const CHECK_LABELS = [
 const ACTION_TONE: Record<string, string> = {
   keep: 'green', scrub: 'blue', generalize: 'amber', drop: 'slate',
 };
+
+/** 把扫描命中的字段路径（students[64].ancestralHome）转为可读定位：第 65 名学生（源表第 72 行）· 籍贯 */
+function findingLocation(f: SecurityFinding): string {
+  const m = /students\[(\d+)\]\.(\w+)/.exec(f.field);
+  if (!m) return f.field;
+  const idx = Number(m[1]);
+  const snapshot = rawStore.snapshot();
+  const row = snapshot[idx]?.sourceRow;
+  const label = STUDENT_FIELD_LABELS[m[2] as keyof typeof STUDENT_FIELD_LABELS] ?? m[2];
+  return `第 ${idx + 1} 名学生${row ? `（源表第 ${row} 行）` : ''} · ${label}：${f.snippet}`;
+}
 
 const ROW_COLUMNS: (keyof AnonymizedStudent)[] = [
   'anonymousId', 'gender', 'householdType', 'difficultyLevel', 'annualIncome',
@@ -114,7 +127,11 @@ export default function ProcessStep({
         {scan && !scan.passed && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
             <p className="text-sm font-medium text-red-800">
-              ✗ 发现疑似敏感信息，已阻止发送。请重新导入并检查源文件后重试。
+              ✗ 发现疑似敏感信息，已阻止发送（为保护学生隐私，系统不会发送这份数据）。
+            </p>
+            <p className="mt-2 rounded-md bg-white/70 px-3 py-2 text-sm text-red-700">
+              请打开源 Excel，按下述行号定位对应学生，检查该单元格是否混入了姓名/证件号/电话等
+              内容（可能是复制粘贴串位），修正后重新导入即可。
             </p>
             <ul className="mt-3 space-y-1">
               {CHECK_LABELS.map((c) => (
@@ -126,7 +143,7 @@ export default function ProcessStep({
                     hitKeys.has(c.key)
                       ? scan.findings
                           .filter((f) => f.category === c.key)
-                          .map((f) => `${f.field}: ${f.snippet}`)
+                          .map(findingLocation)
                           .join('；')
                       : undefined
                   }
