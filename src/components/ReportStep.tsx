@@ -11,6 +11,7 @@ import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeri
 import { APP_VERSION } from '../app-config';
 import { reportReportDownloaded, reportStudentSearch } from '../stats/usage-reporter';
 import { countReviewStatuses, reviewStatusTone, REVIEW_STATUS_COLORS } from '../report/review-status';
+import { exportIssuesCsv } from '../report/issue-csv';
 import Card from './ui/Card';
 import Button from './ui/Button';
 import Badge from './ui/Badge';
@@ -380,6 +381,18 @@ export default function ReportStep({
           </p>
         </div>
       </div>
+
+      {/* 报告开始前的警示（橙色参考说明 + 红色保密提示） */}
+      <div className="space-y-2">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-medium leading-relaxed text-amber-800">
+          ⚠ 本报告基于脱敏后的申请材料生成，仅供走访参考，不构成任何资助结论；
+          最终资格判断由工作人员根据申请材料、现场面谈与学校情况综合决定。
+        </div>
+        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-2.5 text-xs font-medium leading-relaxed text-red-800">
+          🚫 报告含学生个人信息，严禁外传、截图转发或用于走访工作以外的任何用途，使用后请妥善保存或删除。
+        </div>
+      </div>
+
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -387,16 +400,6 @@ export default function ReportStep({
               走访参考报告 — {report.schoolName}（{report.cohort}）
             </h2>
             <p className="mt-1 text-xs text-slate-500">生成时间：{report.generatedAt} · 仅存于当前页面内存</p>
-            {/* 审核安排：审核人/走访人（来自静态安排表；无匹配则不显示） */}
-            {report.audit && (
-              <p className="mt-2 inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
-                <span className="font-medium text-slate-700">本学校审核安排</span>
-                <span>审核人：{report.audit.auditor}</span>
-                <span>·</span>
-                <span>走访人：{report.audit.visitor1}</span>
-                {report.audit.visitor2 && (<><span>/</span><span>{report.audit.visitor2}</span></>)}
-              </p>
-            )}
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -474,10 +477,6 @@ export default function ReportStep({
             未识别到姓名列，列表按匿名编号显示。如需显示学生姓名，请确认表格包含「珍珠生姓名/姓名/学生姓名」列后重新导入。
           </div>
         )}
-        <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-          本报告基于脱敏后的申请材料生成，仅供走访参考，不构成任何资助结论。
-          最终资格判断由工作人员根据申请材料、现场面谈与学校情况综合决定。
-        </div>
         {/* 本地查找：输入姓名（仅本机内存匹配）实时下拉 + 查看按钮弹出学生信息模态框 */}
         {nameIndex.size > 0 && (
           <div className="mt-4">
@@ -559,14 +558,25 @@ export default function ReportStep({
             {sa.commonIssues.length === 0 && <li className="text-xs text-slate-400">暂无。</li>}
           </ul>
         </section>
-        {sa.dataQualityIssues.length > 0 && (
-          <section className="mt-3 rounded bg-amber-50 p-3">
+        <section className="mt-3 rounded bg-amber-50/60 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="border-l-4 border-amber-400 pl-2 text-sm font-medium text-amber-800">材料质量提示</h4>
-            <ul className="mt-1.5 space-y-0.5 text-xs text-amber-700">
-              {sa.dataQualityIssues.map((i) => <li key={i}>· {i}</li>)}
-            </ul>
-          </section>
-        )}
+            <button
+              type="button"
+              onClick={() => exportIssuesCsv(report.schoolName, nameIndex, report.studentsData, report.cleanIssues ?? [])}
+              className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"
+              title="数字校验与敏感误填问题合并导出为表格（含学生姓名，请妥善保管）"
+            >
+              导出填写问题表（CSV）
+            </button>
+          </div>
+          <ul className="mt-1.5 space-y-0.5 text-xs text-amber-700">
+            {sa.dataQualityIssues.map((i) => <li key={i}>· {i}</li>)}
+          </ul>
+          <p className="mt-1 text-[11px] text-slate-400">
+            导出表包含本地数字校验与敏感误填问题（编号/姓名/疑似错误的点/正确应该什么样），与 AI 提示互补。
+          </p>
+        </section>
         <section className="mt-4">
           <h4 className="border-l-4 border-blue-400 pl-2 text-sm font-medium text-slate-700">重点核实主题</h4>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -574,46 +584,54 @@ export default function ReportStep({
             {sa.keyVerificationTopics.length === 0 && <span className="text-xs text-slate-400">暂无。</span>}
           </div>
         </section>
-        <section className="mt-4">
-          <h4 className="border-l-4 border-emerald-400 pl-2 text-sm font-medium text-slate-700">整体面谈建议</h4>
-          <ul className="mt-1.5 space-y-0.5 text-sm text-slate-600">
-            {sa.interviewSuggestions.map((s) => <li key={s}>· {s}</li>)}
-            {sa.interviewSuggestions.length === 0 && <li className="text-xs text-slate-400">暂无。</li>}
-          </ul>
-        </section>
       </Card>
 
-      {/* 审核状态概览（总人数 + 状态饼图；数据来自导入表格的「状态」列快照） */}
+      {/* 审核与走访概览：状态饼图（快照口径）+ 审核安排（来源：9/2 早班车，以 H 中心为准） */}
       {(() => {
         const statusCounts = countReviewStatuses(report.studentsData);
-        if (statusCounts.length === 0) return null;
+        if (statusCounts.length === 0 && !report.audit) return null;
         return (
           <Card>
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h3 className="text-base font-semibold text-slate-800">
-                  审核状态概览
-                </h3>
-                <p className="mt-1 text-xs text-slate-500">
-                  本批次共 {report.studentsData.length} 名学生 · 已标注审核状态 {statusCounts.reduce((a, i) => a + i.count, 0)} 人
+            <h3 className="text-base font-semibold text-slate-800">审核与走访概览</h3>
+            {statusCounts.length > 0 && (
+              <>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-slate-600">
+                      本批次共 <b>{report.studentsData.length}</b> 名学生 · 已标注审核状态 {statusCounts.reduce((a, i) => a + i.count, 0)} 人
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-5">
+                    <DonutChart items={statusCounts.map((i) => ({ label: i.status, count: i.count }))} />
+                    <ul className="space-y-1.5">
+                      {statusCounts.map((i) => (
+                        <li key={i.status} className="flex items-center gap-2 whitespace-nowrap text-sm text-slate-600">
+                          <Badge tone={reviewStatusTone(i.status)}>{i.status}</Badge>
+                          <span className="w-9 text-right font-medium">{i.count} 人</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                <p className="mt-3 rounded-md bg-slate-50 px-3 py-1.5 text-xs leading-relaxed text-slate-500">
+                  注：上表状态取自导入表格时的数据快照，并非实时状态；若名单已在系统中流转（草稿→初审→复审等），
+                  请以基金会的实时审核记录为准，走访时建议一并确认当前状态。
+                </p>
+              </>
+            )}
+            {/* 审核与走访安排 */}
+            {report.audit && (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-xs leading-relaxed text-slate-600">
+                <p className="font-medium text-slate-700">
+                  审核人：{report.audit.auditor}
+                  <span className="mx-2 text-slate-300">·</span>
+                  走访人：{report.audit.visitor1}{report.audit.visitor2 ? ` / ${report.audit.visitor2}` : ''}
+                </p>
+                <p className="mt-1 text-slate-400">
+                  以上审核与走访安排来源于 2026 年 9 月 2 日早班车安排，仅供参考；最新安排请咨询 H 中心。
                 </p>
               </div>
-              <div className="flex items-center gap-5">
-                <DonutChart items={statusCounts.map((i) => ({ label: i.status, count: i.count }))} />
-                <ul className="space-y-1.5">
-                  {statusCounts.map((i) => (
-                    <li key={i.status} className="flex items-center gap-2 text-sm text-slate-600">
-                      <Badge tone={reviewStatusTone(i.status)}>{i.status}</Badge>
-                      <span className="w-8 text-right font-medium">{i.count} 人</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            <p className="mt-3 rounded-md bg-slate-50 px-3 py-1.5 text-xs leading-relaxed text-slate-500">
-              注：上表状态取自导入表格时的数据快照，并非实时状态；若名单已在系统中流转（草稿→初审→复审等），
-              请以基金会的实时审核记录为准，走访时建议一并确认当前状态。
-            </p>
+            )}
           </Card>
         );
       })()}

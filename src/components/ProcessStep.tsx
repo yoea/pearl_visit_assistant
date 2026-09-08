@@ -5,9 +5,10 @@ import { ACTION_LABELS, DROP_REASON_LABELS, STUDENT_FIELD_LABELS } from '../util
 import { SENT_FIELDS } from '../analysis/payload';
 import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeric-validation';
 import { rawStore } from '../anonymization/raw-store';
-import { downloadTextFile } from '../utils/download';
+import { exportIssuesCsv } from '../report/issue-csv';
 import type { SecurityFinding } from '../security/scanner';
 import type { CleanedIssue } from '../security/auto-clean';
+
 import Card from './ui/Card';
 import StatCard from './ui/StatCard';
 import Button from './ui/Button';
@@ -325,7 +326,7 @@ export default function ProcessStep({
           <Button
             variant="secondary"
             disabled={numericIssues.length === 0 && (cleanIssues ?? []).length === 0}
-            onClick={() => exportIssueCsv(meta.schoolName, output.nameIndex, numericIssues, cleanIssues ?? [])}
+            onClick={() => exportIssuesCsv(meta.schoolName, output.nameIndex, output.students, cleanIssues ?? [])}
           >
             导出填写校验问题表（CSV）
           </Button>
@@ -425,56 +426,6 @@ export default function ProcessStep({
       </Card>
     </div>
   );
-}
-
-/** 数值字段的「正确应该什么样」提示（导出表用） */
-const EXPECTED_HINTS: Record<string, string> = {
-  height: '身高（cm），如 165；填 1.65 系米/厘米单位错误',
-  weight: '体重（kg），如 55；105 多为斤，需换算确认',
-  annualIncome: '家庭年收入（元），如 30000；填 1/2/3 多为漏「万」',
-  perCapitaIncome: '人均年收入（元），且不应高于年收入',
-  debtStatus: '负债金额（元），如 50000；8 元等极小值不现实',
-  distanceToSchoolKm: '单位应为公里（km），如 3；若填 3000 多为误写成米，需换算回公里',
-  schoolChildrenCount: '上学子女人数（整数），如 2',
-  zhongkaoScore: '中考成绩不应高于满分（zhongkaoFullScore）',
-};
-
-interface IssueRow {
-  studentId: string;
-  name?: string;
-  issue: string; // 疑似错误的点
-  expected: string; // 正确应该什么样
-}
-
-/** 组装校验问题表并下载（CSV with BOM，Excel 直接打开不乱码） */
-function exportIssueCsv(
-  schoolName: string,
-  nameIndex: ReadonlyMap<string, string>,
-  numericIssues: { studentId: string; key: string; label: string; value: string }[],
-  cleanIssues: CleanedIssue[],
-): void {
-  const rows: IssueRow[] = [
-    ...numericIssues.map((i) => ({
-      studentId: i.studentId,
-      name: nameIndex.get(i.studentId),
-      issue: `${i.label}填写「${i.value}」，${NUMERIC_ERROR_LABEL}`,
-      expected: EXPECTED_HINTS[i.key] ?? '请与申请材料核对实际值',
-    })),
-    ...cleanIssues.map((c) => ({
-      studentId: c.studentId,
-      name: nameIndex.get(c.studentId),
-      issue: `${c.fieldLabel}填写疑似混入敏感信息（原值 ${c.originalMasked}），已${c.note}`,
-      expected: '请核对申请材料补填实际内容（该字段不应含证件号/电话等）',
-    })),
-  ];
-  if (rows.length === 0) return;
-  const esc = (v: string) => (v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v);
-  const lines = ['编号,姓名,疑似错误的点,正确应该什么样'];
-  for (const r of rows) {
-    const name = r.name ?? '';
-    lines.push([esc(r.studentId), esc(name), esc(r.issue), esc(r.expected)].join(','));
-  }
-  downloadTextFile(`填写校验问题表-${schoolName}.csv`, `﻿${lines.join('\n')}`, 'text/csv;charset=utf-8');
 }
 
 function FragmentRow({ student, expanded, onToggle }: {

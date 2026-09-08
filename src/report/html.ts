@@ -274,8 +274,6 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     ${sa.keyVerificationTopics.length > 0
       ? `<p class="tags">${sa.keyVerificationTopics.map((t) => `<span class="tag tag-mid">${escapeHtml(t)}</span>`).join('')}</p>`
       : '<p class="empty">暂无。</p>'}
-    <h3>整体面谈建议</h3>
-    ${listItems(sa.interviewSuggestions, '暂无。')}
   </div>
 
   <div class="card">

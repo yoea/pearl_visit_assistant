@@ -101,11 +101,6 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
   for (const t of sa.keyVerificationTopics) lines.push(`- ${escapeMdLine(t)}`);
   if (sa.keyVerificationTopics.length === 0) lines.push('- 暂无。');
   lines.push('');
-  lines.push('### 5. 整体面谈建议');
-  lines.push('');
-  for (const s of sa.interviewSuggestions) lines.push(`- ${escapeMdLine(s)}`);
-  if (sa.interviewSuggestions.length === 0) lines.push('- 暂无。');
-  lines.push('');
 
   lines.push(`## ${['一', '二', '三', '四'][sec - 1]}、单个学生面谈参考`);
   sec += 1;
