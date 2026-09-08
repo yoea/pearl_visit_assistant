@@ -232,9 +232,24 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     ${studentSections}
   </div>
 
+  ${report.cleanIssues && report.cleanIssues.length > 0 ? `
+  <div class="card-warn" style="padding:14px 18px;margin-bottom:16px">
+    <h3 style="margin:0 0 6px;font-size:14px;color:#b91c1c">资料填写问题（${report.cleanIssues.length} 处，已自动清除敏感信息）</h3>
+    <p style="margin:0 0 8px;font-size:12px;color:#92400e">以下字段疑似误填了证件号/电话等敏感信息，发送给 AI 的内容已不含原文；走访时请向学生核实真实内容。</p>
+    <ul style="margin:0;padding-left:18px">${report.cleanIssues.map((c) => {
+      const name = nameIndex?.get(c.studentId);
+      return `<li style="font-size:13px;color:#7f1d1d">${escapeHtml(name ? `${name}（${c.studentId}）` : c.studentId)}：${escapeHtml(c.fieldLabel)} 原填 ${escapeHtml(c.originalMasked)}，${escapeHtml(c.note)}</li>`;
+    }).join('')}</ul>
+  </div>` : ''}
   <div class="card">
     <h2>三、通用面谈指南</h2>
     ${guideSections}
+  </div>
+
+  <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;line-height:1.9">
+    <p style="margin:0">⚠ <b>保密提示</b>：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。</p>
+    <p style="margin:0">Copyright © 新华教育基金会 All Rights Reserved.</p>
+    <p style="margin:0">工具作者：品牌传播部×公益数字化 永银Ethan</p>
   </div>
 </div>
 <script>

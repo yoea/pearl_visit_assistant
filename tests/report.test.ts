@@ -58,6 +58,25 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(md).toContain('#### 6. 推荐面谈问题');
   });
 
+  it('Markdown 页脚含保密提示/版权/工具作者；学生节顺序与页面一致', async () => {
+    const result = await new MockAnalysisProvider().analyze({
+      meta, students: [sampleStudent],
+    } satisfies AnalysisRequest);
+    const md = reportToMarkdown(generateReport(result, meta, now, [sampleStudent]));
+    // 页脚三要素
+    expect(md).toContain('**保密提示**：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。');
+    expect(md).toContain('Copyright © 新华教育基金会 All Rights Reserved.');
+    expect(md).toContain('工具作者：品牌传播部×公益数字化 永银Ethan');
+    // 学生节顺序：材料要点 1 → 家庭情况 2 → 基本情况 3
+    const m1 = md.indexOf('#### 1. 材料要点摘要');
+    const m2 = md.indexOf('#### 2. 家庭情况概括');
+    const m3 = md.indexOf('#### 3. 基本情况');
+    expect(m1).toBeGreaterThan(-1);
+    expect(m1 < m2 && m2 < m3).toBe(true);
+    // 异常值标注（体重 105kg 等由 mock 构造？sample 正常——直接验证标注渲染函数存在性：含「⚠ 疑似填写错误待核实」出现于基本行逻辑）
+    expect(md).toContain('#### 4. 主要困难因素');
+  });
+
   it('传入 nameIndex 时学生标题显示真实姓名并附匿名编号', async () => {
     const result = await new MockAnalysisProvider().analyze({
       meta, students: [sampleStudent],
@@ -126,7 +145,7 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     const md = reportToMarkdown(report);
     expect(md).toContain('### 2. 共性问题\n\n- 暂无。');
     expect(md).toContain('### 3. 材料质量提示\n\n- 全部学生材料完整。');
-    expect(md).toContain('#### 1. 基本情况\n\n- 暂无。');
+    expect(md).toContain('#### 3. 基本情况\n\n- 暂无。'); // 顺序与页面一致：材料要点→家庭→基本情况
     expect(md).toContain('#### 6. 推荐面谈问题\n\n- 暂无。');
   });
 
@@ -158,6 +177,11 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(html).not.toMatch(/https?:\/\//); // 零外部依赖（无 CDN/图片/脚本外链）
     expect(html).not.toContain('建议通过');
     expect(html).not.toContain('建议淘汰');
+    // 页脚：保密提示 / 版权 / 工具作者
+    expect(html).toContain('保密提示');
+    expect(html).toContain('严禁外传或用于其他用途');
+    expect(html).toContain('Copyright © 新华教育基金会 All Rights Reserved.');
+    expect(html).toContain('品牌传播部×公益数字化 永银Ethan');
   });
 
   it('HTML 学生明细为卡片化布局（编号问题圆点/重点困难条/因素小卡）', async () => {

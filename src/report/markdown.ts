@@ -2,6 +2,7 @@ import { GENERAL_GUIDE } from './general-guide';
 import type { Report } from './types';
 import type { AnonymizedStudent } from '../types/student';
 import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
+import { checkNumericIssues } from '../anonymization/numeric-validation';
 
 /**
  * 动态文本行转义：行首的「#」「*」「>」「-」标记与换行可能破坏 Markdown 结构
@@ -13,14 +14,16 @@ export function escapeMdLine(text: string): string {
     .replace(/^(?=[#*>-])/, '\\'); // 行首标题/列表/引用标记前加反斜杠转义
 }
 
-/** 本地学生数据 → 基本信息行（null/空串过滤，anonymousId 不展示） */
+/** 本地学生数据 → 基本信息行（null/空串过滤，anonymousId 不展示；异常值附校验标注） */
 function basicInfoLines(s: AnonymizedStudent): string[] {
   const lines: string[] = [];
+  const issueKeys = new Set(checkNumericIssues(s).map((i) => i.key));
   for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
     if (k === 'anonymousId') continue;
     const v = s[k];
     if (v == null || v === '') continue;
-    lines.push(`- ${STUDENT_FIELD_LABELS[k]}：${escapeMdLine(String(v))}`);
+    const warn = issueKeys.has(k) ? ' ⚠ 疑似填写错误待核实' : '';
+    lines.push(`- ${STUDENT_FIELD_LABELS[k]}：${escapeMdLine(String(v))}${warn}`);
   }
   return lines;
 }
@@ -30,6 +33,7 @@ function basicInfoLines(s: AnonymizedStudent): string[] {
 export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string, string>): string {
   const lines: string[] = [];
   const sa = report.schoolAnalysis;
+  let sec = 1; // 主章节动态编号（有资料填写问题时顺延）
 
   lines.push(`# ${report.title} — ${report.schoolName}（${report.cohort}）`);
   lines.push('');
@@ -37,7 +41,22 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
   lines.push('> 说明：本报告基于脱敏后的申请材料生成，仅供走访参考，不构成任何资助结论。');
   lines.push('');
 
-  lines.push('## 一、学校整体情况');
+  // 资料填写问题（发送前自动清除的敏感误填；走访时需向学生核实）
+  if (report.cleanIssues && report.cleanIssues.length > 0) {
+    lines.push(`## ${['一', '二', '三', '四'][sec - 1]}、资料填写问题（${report.cleanIssues.length} 处，已自动清除敏感信息）`);
+    sec += 1;
+    lines.push('');
+    lines.push('> 以下字段疑似误填了证件号/电话等敏感信息，发送给 AI 的内容已不含原文；走访时请向学生核实真实内容。');
+    lines.push('');
+    for (const c of report.cleanIssues) {
+      const name = nameIndex?.get(c.studentId);
+      lines.push(`- ${name ? `${name}（${c.studentId}）` : c.studentId}：${c.fieldLabel} 原填 ${c.originalMasked}，${c.note}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(`## ${['一', '二', '三', '四'][sec - 1]}、学校整体情况`);
+  sec += 1;
   lines.push('');
   lines.push(escapeMdLine(sa.overview));
   lines.push('');
@@ -67,14 +86,29 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
   if (sa.interviewSuggestions.length === 0) lines.push('- 暂无。');
   lines.push('');
 
-  lines.push('## 二、单个学生面谈参考');
+  lines.push(`## ${['一', '二', '三', '四'][sec - 1]}、单个学生面谈参考`);
+  sec += 1;
   lines.push('');
   const dataById = new Map(report.studentsData.map((s) => [s.anonymousId, s]));
   for (const g of report.students) {
     const display = nameIndex?.get(g.studentId) ?? g.studentId;
     lines.push(`### ${escapeMdLine(display)}${nameIndex?.has(g.studentId) ? `（${g.studentId}）` : ''}`);
     lines.push('');
-    lines.push('#### 1. 基本情况');
+    // 重点困难概览（high 因素，与页面横幅一致）
+    const highFactors = g.mainDifficultyFactors.filter((f) => f.importance === 'high');
+    if (highFactors.length > 0) {
+      lines.push(`> 重点困难：${highFactors.map((f) => escapeMdLine(f.factor)).join('、')}`);
+      lines.push('');
+    }
+    lines.push('#### 1. 材料要点摘要');
+    lines.push('');
+    lines.push(escapeMdLine(g.summary));
+    lines.push('');
+    lines.push('#### 2. 家庭情况概括');
+    lines.push('');
+    lines.push(escapeMdLine(g.familySituation));
+    lines.push('');
+    lines.push('#### 3. 基本情况');
     lines.push('');
     const local = dataById.get(g.studentId);
     if (local) {
@@ -82,14 +116,6 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
     } else {
       lines.push('- 暂无。');
     }
-    lines.push('');
-    lines.push('#### 2. 材料要点摘要');
-    lines.push('');
-    lines.push(escapeMdLine(g.summary));
-    lines.push('');
-    lines.push('#### 3. 家庭情况概括');
-    lines.push('');
-    lines.push(escapeMdLine(g.familySituation));
     lines.push('');
     lines.push('#### 4. 主要困难因素');
     lines.push('');
@@ -115,7 +141,7 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
     lines.push('');
   }
 
-  lines.push('## 三、通用面谈指南');
+  lines.push(`## ${['一', '二', '三', '四'][sec - 1]}、通用面谈指南`);
   lines.push('');
   for (const section of GENERAL_GUIDE) {
     lines.push(`### ${section.section}`);
@@ -123,6 +149,14 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
     for (const item of section.items) lines.push(`- ${item}`);
     lines.push('');
   }
+
+  // 页脚：版权与保密提示（每次下载自带，无法移除）
+  lines.push('---');
+  lines.push('');
+  lines.push('> **保密提示**：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。');
+  lines.push('> Copyright © 新华教育基金会 All Rights Reserved.');
+  lines.push('> 工具作者：品牌传播部×公益数字化 永银Ethan');
+  lines.push('');
 
   return lines.join('\n');
 }
