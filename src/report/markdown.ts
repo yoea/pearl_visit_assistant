@@ -35,6 +35,11 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
   const sa = report.schoolAnalysis;
   let sec = 1; // 主章节动态编号（有资料填写问题时顺延）
 
+  // 顶部保密警示（红色强调；支持 HTML 的渲染器显示为红色）
+  lines.push('<span style="color:#dc2626;font-weight:600">⚠ 保密提示：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。</span>');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
   lines.push(`# ${report.title} — ${report.schoolName}（${report.cohort}）`);
   lines.push('');
   lines.push(`> 生成时间：${report.generatedAt}`);
@@ -150,10 +155,9 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
     lines.push('');
   }
 
-  // 页脚：版权与保密提示（每次下载自带，无法移除）
+  // 页脚：版权与作者（保密提示已在文件最顶部）
   lines.push('---');
   lines.push('');
-  lines.push('> **保密提示**：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。');
   lines.push('> Copyright © 新华教育基金会 All Rights Reserved.');
   lines.push('> 工具作者：品牌传播部×公益数字化 永银Ethan');
   lines.push('');

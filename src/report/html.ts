@@ -206,6 +206,10 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
 </head>
 <body>
 <div class="page">
+  <!-- 顶部保密警示（红色强调） -->
+  <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:14px;color:#b91c1c;font-size:13px;font-weight:600">
+    ⚠ 保密提示：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。
+  </div>
   <div class="banner">
     <h1>走访参考报告 — ${escapeHtml(report.schoolName)}（${escapeHtml(report.cohort)}）</h1>
     <p>生成时间：${escapeHtml(report.generatedAt)} · 本报告基于脱敏后的申请材料生成，仅供走访参考，不构成任何资助结论。</p>
@@ -253,7 +257,6 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   </div>
 
   <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;line-height:1.9">
-    <p style="margin:0">⚠ <b>保密提示</b>：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。</p>
     <p style="margin:0">Copyright © 新华教育基金会 All Rights Reserved.</p>
     <p style="margin:0">工具作者：品牌传播部×公益数字化 永银Ethan</p>
   </div>

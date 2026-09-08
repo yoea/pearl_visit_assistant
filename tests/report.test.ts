@@ -63,8 +63,10 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
       meta, students: [sampleStudent],
     } satisfies AnalysisRequest);
     const md = reportToMarkdown(generateReport(result, meta, now, [sampleStudent]));
-    // 页脚三要素
-    expect(md).toContain('**保密提示**：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。');
+    // 保密提示置顶（红色强调）、版权/作者在页脚
+    expect(md).toContain('保密提示：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。');
+    expect(md.indexOf('保密提示')).toBeLessThan(md.indexOf('# 走访参考报告'));
+    expect(md).toContain('#dc2626'); // 红色标记
     expect(md).toContain('Copyright © 新华教育基金会 All Rights Reserved.');
     expect(md).toContain('工具作者：品牌传播部×公益数字化 永银Ethan');
     // 学生节顺序：材料要点 1 → 家庭情况 2 → 基本情况 3
@@ -177,9 +179,10 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(html).not.toMatch(/https?:\/\//); // 零外部依赖（无 CDN/图片/脚本外链）
     expect(html).not.toContain('建议通过');
     expect(html).not.toContain('建议淘汰');
-    // 页脚：保密提示 / 版权 / 工具作者
-    expect(html).toContain('保密提示');
-    expect(html).toContain('严禁外传或用于其他用途');
+    // 保密提示置顶（红色警示条）、版权/作者在页脚
+    expect(html).toContain('保密提示：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。');
+    expect(html.indexOf('保密提示')).toBeLessThan(html.indexOf('走访参考报告 — '));
+    expect(html).toContain('#b91c1c'); // 红色强调
     expect(html).toContain('Copyright © 新华教育基金会 All Rights Reserved.');
     expect(html).toContain('品牌传播部×公益数字化 永银Ethan');
   });
