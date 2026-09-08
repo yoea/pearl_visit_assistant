@@ -73,7 +73,7 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     // 审核状态概览（总数 + 分布 + 快照注）
     expect(md).toContain('本批次共 1 名学生，审核状态分布：');
     expect(md).toContain('- 初审中：1 人');
-    expect(md).toContain('以上状态取自导入表格时的数据快照');
+    expect(md).toContain('状态为导入表格时的快照，并非实时');
     // 学生标题下状态行
     expect(md).toContain('> 审核状态：初审中');
   });

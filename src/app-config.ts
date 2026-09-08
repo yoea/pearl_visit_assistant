@@ -10,4 +10,4 @@ export const APP_SUBTITLE = (import.meta.env.VITE_APP_SUBTITLE as string | undef
   || '只需上传珍珠生申请表，即可分析学生资料填写问题并提取重点信息，帮您快速审核、面谈。';
 
 /** 版本标签：与 git tag / package.json version 保持同步 */
-export const APP_VERSION = 'v1.2.0';
+export const APP_VERSION = 'v2.0.0';

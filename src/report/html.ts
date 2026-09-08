@@ -254,7 +254,7 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     <h2 style="margin:0 0 8px">审核状态概览</h2>
     <p style="margin:0 0 10px;font-size:13px">本批次共 ${report.studentsData.length} 名学生 · 已标注审核状态 ${sc.reduce((a, i) => a + i.count, 0)} 人</p>
     <ul style="margin:0;padding-left:18px">${sc.map((i) => `<li style="font-size:13px;margin:2px 0">${escapeHtml(i.status)}：${i.count} 人</li>`).join('')}</ul>
-    <p style="margin:8px 0 0;font-size:12px;color:#94a3b8">注：上表状态取自导入表格时的数据快照，并非实时状态；名单若已在系统中流转，请以基金会实时审核记录为准。</p>
+    <p style="margin:8px 0 0;font-size:12px;color:#94a3b8">注：状态为导入表格时的快照，并非实时；请以基金会的实时审核记录为准。</p>
   </div>`;
   })()}
 

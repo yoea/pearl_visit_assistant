@@ -59,7 +59,7 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
     lines.push('');
     for (const i of statusCounts) lines.push(`- ${i.status}：${i.count} 人`);
     lines.push('');
-    lines.push('> 注：以上状态取自导入表格时的数据快照（非实时）；名单若已在系统中流转，请以基金会实时审核记录为准。');
+    lines.push('> 注：状态为导入表格时的快照，并非实时；请以基金会的实时审核记录为准。');
     lines.push('');
   }
 

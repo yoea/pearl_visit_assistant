@@ -635,8 +635,7 @@ export default function ReportStep({
                   </div>
                 </div>
                 <p className="mt-3 rounded-md bg-slate-50 px-3 py-1.5 text-xs leading-relaxed text-slate-500">
-                  注：上表状态取自导入表格时的数据快照，并非实时状态；若名单已在系统中流转（草稿→初审→复审等），
-                  请以基金会的实时审核记录为准，走访时建议一并确认当前状态。
+                  注：状态为导入表格时的快照，并非实时；请以基金会的实时审核记录为准。
                 </p>
               </>
             )}
