@@ -184,7 +184,13 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   .num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 11px; font-weight: 600; flex-shrink: 0; }
   .guide { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; background: #fff; }
   .guide h4 { margin: 0 0 6px; font-size: 13px; color: #334155; }
-  @media print { body { background: #fff; } .card, .student { break-inside: avoid; } }
+  @media print {
+    body { background: #fff; }
+    .card, .student, .banner-warn, .card-warn, .card-amber { break-inside: avoid; }
+    /* 打印时强制展开基本情况折叠（[hidden] 优先级低于本规则：本规则置于其后） */
+    [hidden] { display: block !important; }
+    .fold-toggle { display: none; }
+  }
   @media (max-width: 640px) {
     body { font-size: 13px; }
     .page { padding: 14px 10px 40px; }

@@ -31,8 +31,8 @@ export interface UsageReport {
     students?: number;
     /** 失败类别枚举名（仅 analysis_failed；非错误原文） */
     errorCategory?: string;
-    /** 下载格式（仅 report_downloaded：'markdown' | 'html'） */
-    format?: 'markdown' | 'html';
+    /** 下载格式（仅 report_downloaded：'markdown' | 'html' | 'pdf'） */
+    format?: 'markdown' | 'html' | 'pdf';
     /** 本次分析 token 用量（仅 analysis_succeeded 且真实 AI） */
     usage?: {
       apiCalls: number;
@@ -152,8 +152,8 @@ export function reportFileUploaded(version: string, students: number): void {
   send({ tool: TOOL, version, clientId: clientId(), event: 'file_uploaded', occurredAt: new Date().toISOString(), payload: { students } });
 }
 
-/** 下载报告（Markdown / HTML 分开计数） */
-export function reportReportDownloaded(version: string, format: 'markdown' | 'html'): void {
+/** 下载报告（Markdown / HTML / PDF 分开计数） */
+export function reportReportDownloaded(version: string, format: 'markdown' | 'html' | 'pdf'): void {
   send({ tool: TOOL, version, clientId: clientId(), event: 'report_downloaded', occurredAt: new Date().toISOString(), payload: { format } });
 }
 

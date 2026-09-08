@@ -14,6 +14,7 @@ export function summarize(records: Array<Record<string, unknown>>): {
   totalStudents: number;
   mdDownloads: number;
   htmlDownloads: number;
+  pdfDownloads: number;
   searches: number;
   promptTokens: number;
   completionTokens: number;

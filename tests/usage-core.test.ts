@@ -67,11 +67,13 @@ describe('usage-core（SQLite 白名单存储 + 汇总）', () => {
   });
 
   it('sanitize：format 白名单（非法格式丢弃）', () => {
-    const ok = sanitize({ ...validBody, event: 'report_downloaded', payload: { format: 'pdf' } });
+    const ok = sanitize({ ...validBody, event: 'report_downloaded', payload: { format: 'docx' } });
     expect(ok).not.toBeNull();
     expect((ok as Record<string, unknown>).payload).toEqual({});
     const ok2 = sanitize({ ...validBody, event: 'report_downloaded', payload: { format: 'html' } });
     expect((ok2 as Record<string, unknown>).payload).toEqual({ format: 'html' });
+    const ok3 = sanitize({ ...validBody, event: 'report_downloaded', payload: { format: 'pdf' } });
+    expect((ok3 as Record<string, unknown>).payload).toEqual({ format: 'pdf' });
     // student_search 不携带 payload 字段
     const s = sanitize({ ...validBody, event: 'student_search', payload: { query: '张三' } });
     expect(JSON.stringify(s)).not.toContain('张三');

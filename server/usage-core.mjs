@@ -23,7 +23,7 @@ const EVENT_WHITELIST = new Set([
   'open', 'file_uploaded', 'analysis_succeeded', 'analysis_failed', 'report_downloaded', 'student_search',
 ]);
 const TOP_WHITELIST = ['tool', 'version', 'clientId', 'event', 'occurredAt', 'payload'];
-const FORMAT_WHITELIST = new Set(['markdown', 'html']);
+const FORMAT_WHITELIST = new Set(['markdown', 'html', 'pdf']);
 const USAGE_WHITELIST = ['apiCalls', 'promptTokens', 'completionTokens', 'cacheHitTokens'];
 const CUM_WHITELIST = ['analyses', 'promptTokens', 'completionTokens', 'totalTokens'];
 
@@ -186,7 +186,7 @@ export function loadRecords() {
 /** 汇总统计（纯函数，供 /stats 与测试复用） */
 export function summarize(records) {
   let opens = 0, uploads = 0, succeeded = 0, failed = 0;
-  let mdDownloads = 0, htmlDownloads = 0, searches = 0;
+  let mdDownloads = 0, htmlDownloads = 0, pdfDownloads = 0, searches = 0;
   let promptTokens = 0, completionTokens = 0, cacheHitTokens = 0;
   let totalStudents = 0;
   const clients = new Set();
@@ -210,6 +210,7 @@ export function summarize(records) {
     } else if (r.event === 'analysis_failed') failed += 1;
     else if (r.event === 'report_downloaded') {
       if (p.format === 'html') htmlDownloads += 1;
+      else if (p.format === 'pdf') pdfDownloads += 1;
       else mdDownloads += 1;
     } else if (r.event === 'student_search') searches += 1;
   }
@@ -220,7 +221,7 @@ export function summarize(records) {
 
   return {
     opens, uploads, succeeded, failed, totalStudents,
-    mdDownloads, htmlDownloads, searches,
+    mdDownloads, htmlDownloads, pdfDownloads, searches,
     promptTokens, completionTokens, cacheHitTokens,
     totalTokens: promptTokens + completionTokens,
     uniqueClients: clients.size,
@@ -267,6 +268,7 @@ export function statsHtml(s) {
     <div class="card"><div class="n">${fmt(s.totalTokens)}</div><div class="l">token 总量（输入+输出）</div></div>
     <div class="card"><div class="n">${fmt(s.mdDownloads)}</div><div class="l">Markdown 下载次数</div></div>
     <div class="card"><div class="n">${fmt(s.htmlDownloads)}</div><div class="l">HTML 下载次数</div></div>
+    <div class="card"><div class="n">${fmt(s.pdfDownloads)}</div><div class="l">PDF 下载次数</div></div>
     <div class="card"><div class="n">${fmt(s.searches)}</div><div class="l">学生搜索次数</div></div>
   </div>
   <h2>token 用量明细</h2>

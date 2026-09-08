@@ -281,6 +281,35 @@ export default function ReportStep({
     reportReportDownloaded(APP_VERSION, 'html');
   };
 
+  /**
+   * 下载 PDF：浏览器打印桥（纯前端无法静默存 PDF）。
+   * 隐藏 iframe 加载报告 HTML → 触发打印框，用户选择「另存为 PDF」即可获得与页面
+   * 排版一致的 PDF（含保密页脚；打印样式已强制展开折叠内容）。
+   */
+  const downloadPdf = () => {
+    const html = reportToHtml(report, nameIndex);
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+    if (!doc) return;
+    doc.open();
+    doc.write(html);
+    doc.close();
+    // 等渲染完成后调打印（用户在弹出的打印框里选择「另存为 PDF」）
+    iframe.contentWindow?.focus();
+    setTimeout(() => {
+      iframe.contentWindow?.print();
+      setTimeout(() => iframe.remove(), 1000);
+    }, 300);
+    reportReportDownloaded(APP_VERSION, 'pdf');
+  };
+
   const sa = report.schoolAnalysis;
 
   // 图表数据（来自本地脱敏数据与 AI 因素结果，非任何外部请求）
@@ -337,10 +366,23 @@ export default function ReportStep({
             </h2>
             <p className="mt-1 text-xs text-slate-500">生成时间：{report.generatedAt} · 仅存于当前页面内存</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={download}>下载 Markdown</Button>
-            <Button onClick={downloadHtml}>下载单文件 HTML</Button>
-            <Button variant="secondary" onClick={onReset}>开始新的分析</Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={downloadHtml}>⬇ 下载报告（单文件 HTML，推荐）</Button>
+              <Button variant="secondary" onClick={downloadPdf}>下载 PDF</Button>
+              <button
+                type="button"
+                onClick={download}
+                className="text-xs text-slate-400 underline-offset-2 transition-colors hover:text-emerald-700 hover:underline"
+                title="Markdown 纯文本版（适合复制到笔记工具）"
+              >
+                Markdown 纯文本版
+              </button>
+              <Button variant="secondary" onClick={onReset}>开始新的分析</Button>
+            </div>
+            <p className="max-w-xs text-right text-xs leading-relaxed text-slate-400">
+              推荐 HTML：与页面排版一致，手机/电脑直接打开；PDF 请在弹出窗口中选择「另存为 PDF」。
+            </p>
           </div>
         </div>
         {/* token 用量统计（仅真实 AI）：本次调用 + 本机累计，便于统计 API 消耗 */}
