@@ -6,6 +6,7 @@ export function parseRecords(text: string): Array<Record<string, unknown>>;
 
 export function summarize(records: Array<Record<string, unknown>>): {
   opens: number;
+  uploads: number;
   succeeded: number;
   failed: number;
   totalStudents: number;

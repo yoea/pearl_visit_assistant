@@ -12,6 +12,7 @@
 - 前端通过构建期环境变量 `VITE_USAGE_REPORT_URL` 配置接口地址（**未配置则前端不发送任何请求**）。
 - 上报时机：
   - `open`：用户每次打开工具页面（一次）
+  - `file_uploaded`：每次导入 Excel 成功（含学生数；结合 `analysis_succeeded` 可观察「上传后未继续分析」的流失）
   - `analysis_succeeded`：每次 AI 分析成功（含 token 用量）
   - `analysis_failed`：每次 AI 分析失败（含失败类别）
   - `report_downloaded`：下载报告（`payload.format` = `markdown` | `html`，分开计数）
@@ -70,6 +71,7 @@ POST {VITE_USAGE_REPORT_URL}
 | event | 字段 | 说明 |
 |---|---|---|
 | `open` | 无 | 打开工具计数 |
+| `file_uploaded` | `students` | 上传表格计数（含本次学生数） |
 | `analysis_succeeded` | `students` / `usage` / `cumulative` | 分析成功计数 + 本次/累计 token |
 | `analysis_failed` | `errorCategory` | 失败计数 + 类别（枚举名，非错误原文） |
 | `report_downloaded` | `format` | 下载计数（`markdown` / `html` 分开） |

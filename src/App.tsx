@@ -12,7 +12,9 @@ import { generateReport } from './report/generator';
 import { InMemoryUsageStats } from './stats/usage-stats';
 import { recordTokenUsage, type CumulativeTokenUsage } from './stats/token-usage-store';
 import { saveReport, loadReport, deleteReport } from './stats/report-store';
-import { reportOpen, reportAnalysisSucceeded, reportAnalysisFailed, usageStatsUrl } from './stats/usage-reporter';
+import {
+  reportOpen, reportFileUploaded, reportAnalysisSucceeded, reportAnalysisFailed, usageStatsUrl,
+} from './stats/usage-reporter';
 import { APP_TITLE, APP_VERSION } from './app-config';
 import type { TokenUsage } from './analysis/provider';
 import type { MappedColumn, RawStudentRecord } from './types/student';
@@ -81,6 +83,7 @@ export default function App() {
       }));
       rawStore.setRecords(records);
       usageStats.record('imported', { studentCount: records.length });
+      reportFileUploaded(APP_VERSION, records.length); // 上传表格计数（白名单数字）
       const mapping = mapFields(parsed.headers);
       const parsedState: ParsedState = {
         schoolName: parsed.schoolName ?? '未识别学校',

@@ -21,7 +21,7 @@ export const DATA_FILE = join(DATA_DIR, 'usage.jsonl');
 
 /** 白名单字段：丢弃上报中任何未知字段（防脏数据/防误存学生数据） */
 const EVENT_WHITELIST = new Set([
-  'open', 'analysis_succeeded', 'analysis_failed', 'report_downloaded', 'student_search',
+  'open', 'file_uploaded', 'analysis_succeeded', 'analysis_failed', 'report_downloaded', 'student_search',
 ]);
 const TOP_WHITELIST = ['tool', 'version', 'clientId', 'event', 'occurredAt', 'payload'];
 const PAYLOAD_WHITELIST = new Set(['students', 'errorCategory', 'usage', 'cumulative', 'format']);
@@ -97,7 +97,7 @@ export function parseRecords(text) {
 
 /** 汇总统计（纯函数，供 /stats 与测试复用） */
 export function summarize(records) {
-  let opens = 0, succeeded = 0, failed = 0;
+  let opens = 0, uploads = 0, succeeded = 0, failed = 0;
   let mdDownloads = 0, htmlDownloads = 0, searches = 0;
   let promptTokens = 0, completionTokens = 0, cacheHitTokens = 0;
   let totalStudents = 0;
@@ -110,6 +110,7 @@ export function summarize(records) {
     daily.set(day, (daily.get(day) ?? 0) + 1);
     const p = r.payload ?? {};
     if (r.event === 'open') opens += 1;
+    else if (r.event === 'file_uploaded') uploads += 1;
     else if (r.event === 'analysis_succeeded') {
       succeeded += 1;
       totalStudents += num(p.students) ?? 0;
@@ -130,7 +131,7 @@ export function summarize(records) {
     .map(([date, count]) => ({ date, count }));
 
   return {
-    opens, succeeded, failed, totalStudents,
+    opens, uploads, succeeded, failed, totalStudents,
     mdDownloads, htmlDownloads, searches,
     promptTokens, completionTokens, cacheHitTokens,
     totalTokens: promptTokens + completionTokens,
@@ -170,6 +171,7 @@ export function statsHtml(s) {
   <p class="muted">数据仅包含白名单计数（打开/分析/token），不含任何学生数据。</p>
   <div class="grid">
     <div class="card"><div class="n">${fmt(s.opens)}</div><div class="l">工具打开次数</div></div>
+    <div class="card"><div class="n">${fmt(s.uploads)}</div><div class="l">上传表格数</div></div>
     <div class="card"><div class="n">${fmt(s.succeeded)}</div><div class="l">分析报告数</div></div>
     <div class="card"><div class="n">${fmt(s.failed)}</div><div class="l">分析失败次数</div></div>
     <div class="card"><div class="n">${fmt(s.uniqueClients)}</div><div class="l">使用人数（按浏览器）</div></div>
@@ -190,9 +192,11 @@ export function statsHtml(s) {
   <h2>事件类型分布</h2>
   <table><tr><th>事件</th><th>次数</th></tr>
     <tr><td>open</td><td>${fmt(s.opens)}</td></tr>
+    <tr><td>file_uploaded</td><td>${fmt(s.uploads)}</td></tr>
     <tr><td>analysis_succeeded</td><td>${fmt(s.succeeded)}</td></tr>
     <tr><td>analysis_failed</td><td>${fmt(s.failed)}</td></tr>
   </table>
+  <p class="muted" style="margin-top:8px">上传 ${fmt(s.uploads)} 份 vs 分析 ${fmt(s.succeeded)} 份 —— 差异即「上传后未继续分析」的流失情况。</p>
   <p class="muted" style="margin-top:24px">记录总数：${fmt(s.records)} 条 · 数据文件：server/data/usage.jsonl</p>
 </div></body></html>`;
 }

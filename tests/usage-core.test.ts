@@ -57,15 +57,17 @@ describe('usage-core（白名单清洗 + 汇总）', () => {
     expect(records[1].event).toBe('open');
   });
 
-  it('summarize：打开/成功/失败计数、token 汇总、去重用户、每日趋势', () => {
+  it('summarize：上传/打开/成功/失败计数、token 汇总、去重用户、每日趋势', () => {
     const records = parseRecords([
       JSON.stringify({ ...validBody, clientId: 'a', occurredAt: '2026-08-27T10:00:00Z', event: 'open' }),
+      JSON.stringify({ ...validBody, clientId: 'a', occurredAt: '2026-08-27T10:30:00Z', event: 'file_uploaded', payload: { students: 80 } }),
       JSON.stringify({ ...validBody, clientId: 'a', occurredAt: '2026-08-27T11:00:00Z' }),
       JSON.stringify({ ...validBody, clientId: 'b', occurredAt: '2026-08-28T09:00:00Z' }),
       JSON.stringify({ ...validBody, clientId: 'a', occurredAt: '2026-08-28T10:00:00Z', event: 'analysis_failed' }),
     ].join('\n'));
     const s = summarize(records);
     expect(s.opens).toBe(1);
+    expect(s.uploads).toBe(1);
     expect(s.succeeded).toBe(2);
     expect(s.failed).toBe(1);
     expect(s.uniqueClients).toBe(2);
@@ -74,7 +76,7 @@ describe('usage-core（白名单清洗 + 汇总）', () => {
     expect(s.totalTokens).toBe(900);
     expect(s.totalStudents).toBe(24);
     expect(s.trend).toEqual([
-      { date: '2026-08-27', count: 2 },
+      { date: '2026-08-27', count: 3 },
       { date: '2026-08-28', count: 2 },
     ]);
   });

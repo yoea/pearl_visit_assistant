@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  reportOpen, reportAnalysisSucceeded, reportAnalysisFailed,
+  reportOpen, reportFileUploaded, reportAnalysisSucceeded, reportAnalysisFailed,
   reportReportDownloaded, reportStudentSearch, type UsageReport,
 } from '../src/stats/usage-reporter';
 
@@ -100,6 +100,14 @@ describe('usage-reporter（白名单计数上报）', () => {
     const id1 = (await beaconBody()).clientId;
     const id2 = (await beaconBody()).clientId;
     expect(id1).toBe(id2);
+  });
+
+  it('file_uploaded：携带上传学生数', async () => {
+    vi.stubEnv('VITE_USAGE_REPORT_URL', 'https://stats.example.com/usage');
+    reportFileUploaded('v1.1.0', 80);
+    const body = await beaconBody();
+    expect(body.event).toBe('file_uploaded');
+    expect(body.payload).toEqual({ students: 80 });
   });
 
   it('report_downloaded：MD/HTML 分开计数（format 字段）', async () => {

@@ -13,7 +13,7 @@ import type { CumulativeTokenUsage } from './token-usage-store';
  */
 
 export type UsageEvent =
-  | 'open' | 'analysis_succeeded' | 'analysis_failed'
+  | 'open' | 'file_uploaded' | 'analysis_succeeded' | 'analysis_failed'
   | 'report_downloaded' | 'student_search';
 
 /** 上报请求体（接口契约见 docs/usage-report-api.md，全部字段为白名单） */
@@ -145,6 +145,11 @@ export function reportAnalysisSucceeded(
 /** 分析失败（仅类别枚举名，非错误原文） */
 export function reportAnalysisFailed(version: string, errorCategory: string): void {
   send({ tool: TOOL, version, clientId: clientId(), event: 'analysis_failed', occurredAt: new Date().toISOString(), payload: { errorCategory } });
+}
+
+/** 上传表格（导入成功即上报；结合 analysis_succeeded 可观察「上传后未继续分析」的情况） */
+export function reportFileUploaded(version: string, students: number): void {
+  send({ tool: TOOL, version, clientId: clientId(), event: 'file_uploaded', occurredAt: new Date().toISOString(), payload: { students } });
 }
 
 /** 下载报告（Markdown / HTML 分开计数） */
