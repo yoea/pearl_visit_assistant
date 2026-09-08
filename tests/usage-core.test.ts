@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { sanitize, parseRecords, summarize } from '../server/usage-core.mjs';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { existsSync, rmSync } from 'node:fs';
+import {
+  sanitize, appendUsage, loadRecords, summarize, setDbPath, closeDb,
+} from '../server/usage-core.mjs';
 
 const validBody = {
   tool: 'pearl-visit-assistant',
@@ -14,7 +19,19 @@ const validBody = {
   },
 };
 
-describe('usage-core（白名单清洗 + 汇总）', () => {
+let tmpDb = '';
+
+beforeAll(() => {
+  tmpDb = join(tmpdir(), `usage-test-${Date.now()}.db`);
+  setDbPath(tmpDb);
+});
+
+afterAll(() => {
+  closeDb();
+  if (existsSync(tmpDb)) rmSync(tmpDb, { force: true });
+});
+
+describe('usage-core（SQLite 白名单存储 + 汇总）', () => {
   it('合法上报：保留白名单字段，丢弃未知字段（防脏数据/防误存学生数据）', () => {
     const dirty = {
       ...validBody,
@@ -49,53 +66,6 @@ describe('usage-core（白名单清洗 + 汇总）', () => {
     expect(payload.usage).toEqual({ apiCalls: 1 });
   });
 
-  it('parseRecords：损坏行跳过，合法行保留', () => {
-    const text = `${JSON.stringify(validBody)}\nbroken line {{{\n${JSON.stringify({ ...validBody, event: 'open' })}\n`;
-    const records = parseRecords(text);
-    expect(records).toHaveLength(2);
-    expect(records[0].event).toBe('analysis_succeeded');
-    expect(records[1].event).toBe('open');
-  });
-
-  it('summarize：上传/打开/成功/失败计数、token 汇总、去重用户、每日趋势', () => {
-    const records = parseRecords([
-      JSON.stringify({ ...validBody, clientId: 'a', occurredAt: '2026-08-27T10:00:00Z', event: 'open' }),
-      JSON.stringify({ ...validBody, clientId: 'a', occurredAt: '2026-08-27T10:30:00Z', event: 'file_uploaded', payload: { students: 80 } }),
-      JSON.stringify({ ...validBody, clientId: 'a', occurredAt: '2026-08-27T11:00:00Z' }),
-      JSON.stringify({ ...validBody, clientId: 'b', occurredAt: '2026-08-28T09:00:00Z' }),
-      JSON.stringify({ ...validBody, clientId: 'a', occurredAt: '2026-08-28T10:00:00Z', event: 'analysis_failed' }),
-    ].join('\n'));
-    const s = summarize(records);
-    expect(s.opens).toBe(1);
-    expect(s.uploads).toBe(1);
-    expect(s.succeeded).toBe(2);
-    expect(s.failed).toBe(1);
-    expect(s.uniqueClients).toBe(2);
-    expect(s.promptTokens).toBe(600); // 2 次成功 × 300
-    expect(s.completionTokens).toBe(300);
-    expect(s.totalTokens).toBe(900);
-    expect(s.totalStudents).toBe(24);
-    expect(s.trend).toEqual([
-      { date: '2026-08-27', count: 3 },
-      { date: '2026-08-28', count: 2 },
-    ]);
-  });
-
-  it('summarize：下载（MD/HTML 分开）与搜索计数', () => {
-    const records = parseRecords([
-      JSON.stringify({ ...validBody, clientId: 'a', event: 'report_downloaded', payload: { format: 'markdown' } }),
-      JSON.stringify({ ...validBody, clientId: 'a', event: 'report_downloaded', payload: { format: 'markdown' } }),
-      JSON.stringify({ ...validBody, clientId: 'a', event: 'report_downloaded', payload: { format: 'html' } }),
-      JSON.stringify({ ...validBody, clientId: 'b', event: 'student_search' }),
-      JSON.stringify({ ...validBody, clientId: 'b', event: 'student_search' }),
-      JSON.stringify({ ...validBody, clientId: 'b', event: 'student_search' }),
-    ].join('\n'));
-    const s = summarize(records);
-    expect(s.mdDownloads).toBe(2);
-    expect(s.htmlDownloads).toBe(1);
-    expect(s.searches).toBe(3);
-  });
-
   it('sanitize：format 白名单（非法格式丢弃）', () => {
     const ok = sanitize({ ...validBody, event: 'report_downloaded', payload: { format: 'pdf' } });
     expect(ok).not.toBeNull();
@@ -108,9 +78,61 @@ describe('usage-core（白名单清洗 + 汇总）', () => {
     expect((s as Record<string, unknown>).payload).toEqual({});
   });
 
+  it('appendUsage → loadRecords 往返（SQLite 存储，字段还原）', () => {
+    expect(appendUsage(sanitize(validBody)!)).toBe(true);
+    expect(appendUsage(sanitize({ ...validBody, event: 'open', payload: {}, occurredAt: '2026-08-27T09:00:00.000Z' })!)).toBe(true);
+    const records = loadRecords() as Array<{
+      event: string; clientId: string;
+      payload: { usage?: Record<string, number>; cumulative?: Record<string, number> };
+    }>;
+    expect(records).toHaveLength(2);
+    expect(records[0].event).toBe('analysis_succeeded');
+    expect(records[0].clientId).toBe('abc-123');
+    expect(records[0].payload.usage).toEqual({ apiCalls: 2, promptTokens: 300, completionTokens: 150, cacheHitTokens: 50 });
+    expect(records[0].payload.cumulative?.totalTokens).toBe(1300);
+    expect(records[1].event).toBe('open');
+    expect(records[1].payload).toEqual({});
+  });
+
+  it('sanitize 返回 null 时 appendUsage 拒绝写入', () => {
+    expect(appendUsage(null as unknown as Record<string, unknown>)).toBe(false);
+  });
+
+  it('summarize：上传/打开/成功/失败计数、token 汇总、去重用户、每日趋势', () => {
+    const records = loadRecords(); // 含 1 open + 1 succeeded（students 12，prompt 300）
+    const all = [
+      ...records,
+      { tool: 'pearl-visit-assistant', version: 'v1.1.0', clientId: 'b', event: 'file_uploaded', occurredAt: '2026-08-27T10:30:00Z', payload: { students: 80 } },
+      { tool: 'x', version: 'v1', clientId: 'b', event: 'analysis_succeeded', occurredAt: '2026-08-28T09:00:00Z', payload: { students: 6, usage: { promptTokens: 300, completionTokens: 150 } } },
+      { tool: 'x', version: 'v1', clientId: 'a', event: 'analysis_failed', occurredAt: '2026-08-28T10:00:00Z', payload: { errorCategory: 'timeout' } },
+      { tool: 'x', version: 'v1', clientId: 'c', event: 'report_downloaded', occurredAt: '2026-08-28T11:00:00Z', payload: { format: 'markdown' } },
+      { tool: 'x', version: 'v1', clientId: 'c', event: 'report_downloaded', occurredAt: '2026-08-28T11:01:00Z', payload: { format: 'html' } },
+      { tool: 'x', version: 'v1', clientId: 'd', event: 'student_search', occurredAt: '2026-08-29T09:00:00Z', payload: {} },
+    ];
+    const s = summarize(all);
+    expect(s.opens).toBe(1);
+    expect(s.uploads).toBe(1);
+    expect(s.succeeded).toBe(2);
+    expect(s.failed).toBe(1);
+    expect(s.uniqueClients).toBe(5); // abc-123(库内) + b + a + c + d
+    expect(s.mdDownloads).toBe(1);
+    expect(s.htmlDownloads).toBe(1);
+    expect(s.searches).toBe(1);
+    expect(s.promptTokens).toBe(600); // 300 × 2 次成功
+    expect(s.completionTokens).toBe(300);
+    expect(s.totalTokens).toBe(900);
+    expect(s.totalStudents).toBe(18); // 12 + 6
+    expect(s.trend).toEqual([
+      { date: '2026-08-27', count: 3 },
+      { date: '2026-08-28', count: 4 },
+      { date: '2026-08-29', count: 1 },
+    ]);
+  });
+
   it('summarize：空记录不崩溃', () => {
     const s = summarize([]);
     expect(s.opens).toBe(0);
+    expect(s.uploads).toBe(0);
     expect(s.succeeded).toBe(0);
     expect(s.totalTokens).toBe(0);
     expect(s.uniqueClients).toBe(0);

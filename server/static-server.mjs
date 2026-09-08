@@ -11,7 +11,7 @@ import http from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, join, normalize, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sanitize, parseRecords, summarize, statsHtml, appendUsage, readUsageText } from './usage-core.mjs';
+import { sanitize, summarize, statsHtml, appendUsage, loadRecords } from './usage-core.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -100,7 +100,7 @@ const server = http.createServer((req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/stats') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-    res.end(statsHtml(summarize(parseRecords(readUsageText()))));
+    res.end(statsHtml(summarize(loadRecords())));
     return;
   }
 

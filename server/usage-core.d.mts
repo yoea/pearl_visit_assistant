@@ -2,7 +2,9 @@
 
 export function sanitize(body: unknown): Record<string, unknown> | null;
 
-export function parseRecords(text: string): Array<Record<string, unknown>>;
+export function appendUsage(clean: Record<string, unknown>): boolean;
+
+export function loadRecords(): Array<Record<string, unknown>>;
 
 export function summarize(records: Array<Record<string, unknown>>): {
   opens: number;
@@ -24,6 +26,6 @@ export function summarize(records: Array<Record<string, unknown>>): {
 
 export function statsHtml(s: ReturnType<typeof summarize>): string;
 
-export function appendUsage(clean: Record<string, unknown>): boolean;
+export function setDbPath(p: string): void;
 
-export function readUsageText(): string;
+export function closeDb(): void;

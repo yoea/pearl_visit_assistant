@@ -19,7 +19,7 @@ npm run build          # 产物在 dist/（Key 注入其中）
 ## 二、部署到 x96max（Armbian 类 Linux）
 
 ```bash
-# 1. 安装 Node.js 18+（Armbian：）
+# 1. 安装 Node.js 24+（统计存储使用内置 node:sqlite，需 ≥22.5）
 #    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs
 # 2. 把整个项目目录（至少 dist/ 与 server/）拷贝到盒子，如 /opt/pearl-visit
 scp -r dist server root@<x96max-ip>:/opt/pearl-visit/

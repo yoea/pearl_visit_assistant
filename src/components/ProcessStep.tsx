@@ -434,7 +434,7 @@ const EXPECTED_HINTS: Record<string, string> = {
   annualIncome: '家庭年收入（元），如 30000；填 1/2/3 多为漏「万」',
   perCapitaIncome: '人均年收入（元），且不应高于年收入',
   debtStatus: '负债金额（元），如 50000；8 元等极小值不现实',
-  distanceToSchoolKm: '距高中公里数，一般不超过 100',
+  distanceToSchoolKm: '单位应为公里（km），如 3；若填 3000 多为误写成米，需换算回公里',
   schoolChildrenCount: '上学子女人数（整数），如 2',
   zhongkaoScore: '中考成绩不应高于满分（zhongkaoFullScore）',
 };

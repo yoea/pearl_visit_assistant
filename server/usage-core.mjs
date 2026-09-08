@@ -1,30 +1,28 @@
 /**
- * 使用情况统计核心逻辑（零依赖，Node 18+）——被 static-server.mjs 复用。
+ * 使用情况统计核心逻辑（Node 24+，内置 node:sqlite）——被 static-server.mjs 复用。
  *
  * 职责：
  *  - POST /api/usage   接收前端上报（见 docs/usage-report-api.md），白名单校验后
- *                      追加到 server/data/usage.jsonl（JSON Lines，数据量小，无需数据库）
- *  - GET  /stats       汇总统计页面（打开次数/分析数/token 总量/去重用户/每日趋势）
+ *                      写入 SQLite（server/data/usage.db）
+ *  - GET  /stats       汇总统计页面（打开次数/上传数/分析数/token 总量/去重用户/每日趋势）
  *
  * 隐私：只持久化前端白名单计数（工具名/版本/随机ID/事件/数字），绝不存储学生数据。
  */
 
-import {
-  appendFileSync, existsSync, mkdirSync, readFileSync,
-} from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = join(ROOT, 'data');
-export const DATA_FILE = join(DATA_DIR, 'usage.jsonl');
+export const DATA_FILE = join(DATA_DIR, 'usage.db');
 
 /** 白名单字段：丢弃上报中任何未知字段（防脏数据/防误存学生数据） */
 const EVENT_WHITELIST = new Set([
   'open', 'file_uploaded', 'analysis_succeeded', 'analysis_failed', 'report_downloaded', 'student_search',
 ]);
 const TOP_WHITELIST = ['tool', 'version', 'clientId', 'event', 'occurredAt', 'payload'];
-const PAYLOAD_WHITELIST = new Set(['students', 'errorCategory', 'usage', 'cumulative', 'format']);
 const FORMAT_WHITELIST = new Set(['markdown', 'html']);
 const USAGE_WHITELIST = ['apiCalls', 'promptTokens', 'completionTokens', 'cacheHitTokens'];
 const CUM_WHITELIST = ['analyses', 'promptTokens', 'completionTokens', 'totalTokens'];
@@ -80,19 +78,109 @@ export function sanitize(body) {
   return out;
 }
 
-/** 逐行解析 JSONL（损坏行跳过，绝不抛错） */
-export function parseRecords(text) {
-  const records = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const obj = JSON.parse(line);
-      if (obj && typeof obj === 'object' && typeof obj.event === 'string') records.push(obj);
-    } catch {
-      // 跳过损坏行
-    }
+/* ── SQLite 存储（node:sqlite / DatabaseSync，Node 24+） ─────────────── */
+
+let db = null;
+let dbPath = DATA_FILE;
+
+/** 测试隔离用：切换数据库文件（会关闭当前连接） */
+export function setDbPath(p) {
+  closeDb();
+  dbPath = p;
+}
+
+export function closeDb() {
+  if (db) {
+    try { db.close(); } catch { /* 忽略 */ }
+    db = null;
   }
-  return records;
+}
+
+function getDb() {
+  if (db) return db;
+  if (!existsSync(dirname(dbPath))) mkdirSync(dirname(dbPath), { recursive: true });
+  db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tool TEXT NOT NULL,
+      version TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      event TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      students INTEGER,
+      error_category TEXT,
+      format TEXT,
+      api_calls INTEGER,
+      prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      cache_hit_tokens INTEGER,
+      cum_analyses INTEGER,
+      cum_prompt_tokens INTEGER,
+      cum_completion_tokens INTEGER,
+      cum_total_tokens INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_usage_occurred ON usage_events(occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_usage_event ON usage_events(event);
+  `);
+  return db;
+}
+
+/** 追加一条已清洗的上报记录；失败返回 false（绝不抛错） */
+export function appendUsage(clean) {
+  try {
+    const p = clean.payload ?? {};
+    const stmt = getDb().prepare(`
+      INSERT INTO usage_events
+        (tool, version, client_id, event, occurred_at,
+         students, error_category, format,
+         api_calls, prompt_tokens, completion_tokens, cache_hit_tokens,
+         cum_analyses, cum_prompt_tokens, cum_completion_tokens, cum_total_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      clean.tool, clean.version, clean.clientId, clean.event, clean.occurredAt,
+      p.students ?? null, p.errorCategory ?? null, p.format ?? null,
+      p.usage?.apiCalls ?? null, p.usage?.promptTokens ?? null,
+      p.usage?.completionTokens ?? null, p.usage?.cacheHitTokens ?? null,
+      p.cumulative?.analyses ?? null, p.cumulative?.promptTokens ?? null,
+      p.cumulative?.completionTokens ?? null, p.cumulative?.totalTokens ?? null,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 读取全部记录（还原为 { …顶层, payload } 结构，供 summarize 使用） */
+export function loadRecords() {
+  try {
+    const rows = getDb().prepare('SELECT * FROM usage_events ORDER BY id').all();
+    return rows.map((r) => {
+      const payload = {};
+      if (r.students !== null) payload.students = r.students;
+      if (r.error_category !== null) payload.errorCategory = r.error_category;
+      if (r.format !== null) payload.format = r.format;
+      const usage = {};
+      if (r.api_calls !== null) usage.apiCalls = r.api_calls;
+      if (r.prompt_tokens !== null) usage.promptTokens = r.prompt_tokens;
+      if (r.completion_tokens !== null) usage.completionTokens = r.completion_tokens;
+      if (r.cache_hit_tokens !== null) usage.cacheHitTokens = r.cache_hit_tokens;
+      if (Object.keys(usage).length > 0) payload.usage = usage;
+      const cum = {};
+      if (r.cum_analyses !== null) cum.analyses = r.cum_analyses;
+      if (r.cum_prompt_tokens !== null) cum.promptTokens = r.cum_prompt_tokens;
+      if (r.cum_completion_tokens !== null) cum.completionTokens = r.cum_completion_tokens;
+      if (r.cum_total_tokens !== null) cum.totalTokens = r.cum_total_tokens;
+      if (Object.keys(cum).length > 0) payload.cumulative = cum;
+      return {
+        tool: r.tool, version: r.version, clientId: r.client_id,
+        event: r.event, occurredAt: r.occurred_at, payload,
+      };
+    });
+  } catch {
+    return [];
+  }
 }
 
 /** 汇总统计（纯函数，供 /stats 与测试复用） */
@@ -197,22 +285,6 @@ export function statsHtml(s) {
     <tr><td>analysis_failed</td><td>${fmt(s.failed)}</td></tr>
   </table>
   <p class="muted" style="margin-top:8px">上传 ${fmt(s.uploads)} 份 vs 分析 ${fmt(s.succeeded)} 份 —— 差异即「上传后未继续分析」的流失情况。</p>
-  <p class="muted" style="margin-top:24px">记录总数：${fmt(s.records)} 条 · 数据文件：server/data/usage.jsonl</p>
+  <p class="muted" style="margin-top:4px">记录总数：${fmt(s.records)} 条 · 数据文件：server/data/usage.db（SQLite）</p>
 </div></body></html>`;
-}
-
-/** 追加一条已清洗的上报记录到 JSONL；失败返回 false（绝不抛错） */
-export function appendUsage(clean) {
-  try {
-    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-    appendFileSync(DATA_FILE, JSON.stringify(clean) + '\n', 'utf8');
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** 读取全部记录文本（文件不存在返回空串） */
-export function readUsageText() {
-  return existsSync(DATA_FILE) ? readFileSync(DATA_FILE, 'utf8') : '';
 }
