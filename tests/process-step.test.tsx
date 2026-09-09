@@ -107,7 +107,7 @@ describe('ProcessStep（脱敏及检查合并页，安全红线）', () => {
   it('扫描失败 → 红色详情 + 发送区不渲染 + 返回上一步触发 onReset', () => {
     const onReset = vi.fn();
     renderStep({ scan: failedScan, onReset });
-    expect(screen.getByText(/发现疑似敏感信息，已阻止发送/)).toBeTruthy();
+    expect(screen.getByText(/已阻止发送/)).toBeTruthy();
     expect(screen.queryByText('确认并开始 AI 分析')).toBeNull();
     fireEvent.click(screen.getByText('返回上一步'));
     expect(onReset).toHaveBeenCalledTimes(1);

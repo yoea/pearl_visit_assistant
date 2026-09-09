@@ -34,6 +34,7 @@ function walk(
   isSchoolName: boolean,
   exemptAddressPaths: readonly string[],
   exemptRulePaths: readonly string[],
+  nameBlacklist: ReadonlySet<string>,
   findings: SecurityFinding[],
 ): void {
   if (node == null) return;
@@ -51,6 +52,18 @@ function walk(
           snippet: maskSnippet(m[0]),
         });
         return; // 每字段只报告第一个命中
+      }
+    }
+    // 姓名黑名单（字段级定位，替代早期对整份 JSON 的全文匹配——可指出具体学生与字段）
+    for (const name of nameBlacklist) {
+      if (name.length >= 2 && node.includes(name)) {
+        findings.push({
+          category: 'name-blacklist',
+          label: '检测到名单中的姓名',
+          field: path,
+          snippet: maskSnippet(name),
+        });
+        return;
       }
     }
     // 地址子句检测（与清洗器同源逻辑）：同一子句内互异地址词 ≥2 个 → 命中
@@ -91,7 +104,7 @@ function walk(
     return;
   }
   if (Array.isArray(node)) {
-    node.forEach((item, i) => walk(item, `${path}[${i}]`, false, false, exemptAddressPaths, exemptRulePaths, findings));
+    node.forEach((item, i) => walk(item, `${path}[${i}]`, false, false, exemptAddressPaths, exemptRulePaths, nameBlacklist, findings));
     return;
   }
   if (typeof node === 'object') {
@@ -103,6 +116,7 @@ function walk(
         k === 'schoolName',
         exemptAddressPaths,
         exemptRulePaths,
+        nameBlacklist,
         findings,
       );
     }
@@ -141,31 +155,16 @@ export function scanPayload(
   const exemptAddressPaths = options.exemptAddressPaths ?? [];
   const exemptRulePaths = options.exemptRulePaths ?? [];
 
-  // 1. 姓名黑名单：全 payload 精确匹配
-  let json: string;
+  // 1 + 2. 字段值扫描（规则 + 姓名黑名单均在字段级进行，命中可精确定位到学生与字段）
   try {
-    json = JSON.stringify(payload);
+    JSON.stringify(payload); // fail-closed：序列化异常（BigInt/循环引用等）按结构异常拒绝
   } catch {
-    // fail-closed：序列化异常（BigInt/循环引用等）一律按结构异常拒绝发送
     return {
       passed: false,
       findings: [{ category: 'malformed-payload', label: 'payload 序列化异常，已拒绝发送', field: '(payload)', snippet: '****' }],
     };
   }
-  for (const name of nameBlacklist) {
-    // 单字姓名跳过：与清洗器一致，避免常见单字（如「宁」「省」）误报
-    if (name.length >= 2 && json.includes(name)) {
-      findings.push({
-        category: 'name-blacklist',
-        label: '检测到名单中的姓名',
-        field: '(全文)',
-        snippet: maskSnippet(name),
-      });
-    }
-  }
-
-  // 2. 字段值规则扫描
-  walk(payload, '', false, false, exemptAddressPaths, exemptRulePaths, findings);
+  walk(payload, '', false, false, exemptAddressPaths, exemptRulePaths, nameBlacklist, findings);
 
   // 3. 禁止字段名检查
   const keys = [...Object.keys(payload)];

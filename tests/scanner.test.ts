@@ -63,13 +63,22 @@ describe('scanPayload', () => {
     expect(JSON.stringify(r.findings)).not.toContain('110101200001011234');
   });
 
-  it('叙事文本含姓名黑名单中的姓名 → 拒绝', () => {
+  it('叙事文本含姓名黑名单中的姓名 → 拒绝（字段级定位，可指出学生与字段）', () => {
     const r = scanPayload(
       { ...cleanRequest, students: [{ ...cleanStudent, visitSummary: '与测试甲同班' }] },
       new Set(['测试甲']),
     );
     expect(r.passed).toBe(false);
-    expect(r.findings.some((f) => f.category === 'name-blacklist')).toBe(true);
+    const hit = r.findings.find((f) => f.category === 'name-blacklist');
+    expect(hit).toBeTruthy();
+    expect(hit!.field).toBe('students[0].visitSummary'); // 不再笼统的 (全文)
+    expect(hit!.snippet).toContain('****'); // 掩码不泄全名
+    // 其他字段（如申请理由）不含该姓名 → 不误报
+    const r2 = scanPayload(
+      { ...cleanRequest, students: [{ ...cleanStudent, visitSummary: '家庭和睦' }] },
+      new Set(['测试甲']),
+    );
+    expect(r2.passed).toBe(true);
   });
 
   it('数字字段不误报（年收入 30000 不是 QQ 号）', () => {

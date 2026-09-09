@@ -135,13 +135,9 @@ export default function ProcessStep({
         {scan && !scan.passed && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
             <p className="text-sm font-medium text-red-800">
-              ✗ 发现疑似敏感信息，已阻止发送（为保护学生隐私，系统不会发送这份数据）。
+              ✗ 检测到无法自动处理的疑似敏感信息，已阻止发送。请按下述定位修改源表后重新导入：
             </p>
-            <p className="mt-2 rounded-md bg-white/70 px-3 py-2 text-sm text-red-700">
-              请打开源 Excel，按下述行号定位对应学生，检查该单元格是否混入了姓名/证件号/电话等
-              内容（可能是复制粘贴串位），修正后重新导入即可。
-            </p>
-            <ul className="mt-3 space-y-1">
+            <ul className="mt-2 space-y-1">
               {CHECK_LABELS.map((c) => (
                 <CheckItem
                   key={c.key}
@@ -158,7 +154,7 @@ export default function ProcessStep({
                 />
               ))}
             </ul>
-            <div className="mt-4">
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button variant="secondary" onClick={onReset}>返回上一步</Button>
             </div>
           </div>
