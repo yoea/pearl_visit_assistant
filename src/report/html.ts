@@ -188,10 +188,10 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   .num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 11px; font-weight: 600; flex-shrink: 0; }
   .guide { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; background: #fff; }
   .guide h4 { margin: 0 0 6px; font-size: 13px; color: #334155; }
-  .search-bar { position: relative; max-width: 340px; margin: 0 0 12px; }
+  .search-bar { position: sticky; top: 10px; z-index: 25; max-width: 360px; margin: 0 0 14px; padding: 5px; background: #fff; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
   .search-bar input { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none; }
   .search-bar input:focus { border-color: #10b981; }
-  #searchResults { display: none; position: absolute; z-index: 30; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 0; list-style: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.08); max-height: 240px; overflow: auto; }
+  #searchResults { display: none; position: absolute; z-index: 30; top: 100%; left: 4px; right: 4px; margin: 4px 0 0; padding: 0; list-style: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.08); max-height: 240px; overflow: auto; }
   #searchResults li { padding: 7px 12px; font-size: 13px; cursor: pointer; }
   #searchResults li:hover { background: #ecfdf5; }
   #searchResults li .sub { color: #94a3b8; font-size: 11px; margin-left: 6px; }
@@ -299,14 +299,14 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
       : '<p class="empty">暂无。</p>'}
   </div>
 
+  ${nameIndex && nameIndex.size > 0 ? `
+  <!-- 学生搜索（悬浮跟随：输入姓名实时下拉 → 点击定位到该学生，可连续搜索不用回顶部） -->
+  <div class="search-bar">
+    <input id="studentSearch" type="text" placeholder="输入学生姓名快速定位…" autocomplete="off">
+    <ul id="searchResults"></ul>
+  </div>` : ''}
   <div class="card">
     <h2>二、单个学生面谈参考</h2>
-    ${nameIndex && nameIndex.size > 0 ? `
-    <!-- 学生搜索（与页面一致：输入姓名实时下拉 → 点击定位到该学生） -->
-    <div class="search-bar">
-      <input id="studentSearch" type="text" placeholder="输入学生姓名快速定位…" autocomplete="off">
-      <ul id="searchResults"></ul>
-    </div>` : ''}
     ${studentSections}
   </div>
 
@@ -373,7 +373,8 @@ document.querySelectorAll('.fold-head').forEach(function (h) {
     list.style.display = 'none';
     var el = document.getElementById('stu-' + id);
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // 居中定位：避免被顶部悬浮搜索条遮挡标题；定位后悬浮条仍在视口顶部，可直接搜下一位
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     el.classList.remove('flash');
     void el.offsetWidth; // 重启动画
     el.classList.add('flash');
