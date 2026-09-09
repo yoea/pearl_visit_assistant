@@ -5,6 +5,7 @@ import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues } from '../anonymization/numeric-validation';
 import { countReviewStatuses } from './review-status';
 import { countDifficultyReasons } from './difficulty-reason';
+import { decorateStudentIds } from './name-tag';
 import { REVIEW_STATUS_COLORS } from './review-status';
 
 /**
@@ -292,7 +293,9 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     <h3>共性问题</h3>
     ${listItems(sa.commonIssues, '暂无。')}
     <h3 class="warn">材料质量提示</h3>
-    ${listItems(sa.dataQualityIssues, '全部学生材料完整。', 'warn')}
+    ${sa.dataQualityIssues.length > 0
+      ? `<ul>${sa.dataQualityIssues.map((i) => `<li class="warn">${escapeHtml(decorateStudentIds(i, nameIndex))}</li>`).join('')}</ul>`
+      : '<p class="empty">全部学生材料完整。</p>'}
     <h3>重点核实主题</h3>
     ${sa.keyVerificationTopics.length > 0
       ? `<p class="tags">${sa.keyVerificationTopics.map((t) => `<span class="tag tag-mid">${escapeHtml(t)}</span>`).join('')}</p>`

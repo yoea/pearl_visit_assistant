@@ -12,6 +12,7 @@ import { APP_VERSION } from '../app-config';
 import { reportReportDownloaded, reportStudentSearch } from '../stats/usage-reporter';
 import { countReviewStatuses, reviewStatusTone, REVIEW_STATUS_COLORS } from '../report/review-status';
 import { countDifficultyReasons } from '../report/difficulty-reason';
+import { decorateStudentIds } from '../report/name-tag';
 import { exportIssuesCsv } from '../report/issue-csv';
 import Card from './ui/Card';
 import Button from './ui/Button';
@@ -592,7 +593,7 @@ export default function ReportStep({
             </button>
           </div>
           <ul className="mt-1.5 space-y-0.5 text-xs text-amber-700">
-            {sa.dataQualityIssues.map((i) => <li key={i}>· {i}</li>)}
+            {sa.dataQualityIssues.map((i) => <li key={i}>· {decorateStudentIds(i, nameIndex)}</li>)}
           </ul>
           <p className="mt-1 text-[11px] text-slate-400">
             导出表包含本地数字校验与敏感误填问题（编号/姓名/疑似错误的点/正确应该什么样），与 AI 提示互补。

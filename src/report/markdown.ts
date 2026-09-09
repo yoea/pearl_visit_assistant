@@ -5,6 +5,7 @@ import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues } from '../anonymization/numeric-validation';
 import { countReviewStatuses } from './review-status';
 import { countDifficultyReasons } from './difficulty-reason';
+import { decorateStudentIds } from './name-tag';
 
 /**
  * 动态文本行转义：行首的「#」「*」「>」「-」标记与换行可能破坏 Markdown 结构
@@ -102,7 +103,7 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
   lines.push('');
   lines.push('### 3. 材料质量提示');
   lines.push('');
-  for (const i of sa.dataQualityIssues) lines.push(`- ${escapeMdLine(i)}`);
+  for (const i of sa.dataQualityIssues) lines.push(`- ${escapeMdLine(decorateStudentIds(i, nameIndex))}`);
   if (sa.dataQualityIssues.length === 0) lines.push('- 全部学生材料完整。');
   lines.push('');
   lines.push('### 4. 重点核实主题');
