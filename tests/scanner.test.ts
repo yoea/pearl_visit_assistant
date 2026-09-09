@@ -85,6 +85,22 @@ describe('scanPayload', () => {
     expect(scanPayload(cleanRequest, new Set()).passed).toBe(true);
   });
 
+  it('学校名称含名单姓名不误报（校名为必发元数据）；学生字段同名仍拦截', () => {
+    const blacklist = new Set(['测试甲']);
+    // meta.schoolName 恰含学生姓名 → 通过
+    const metaHit = scanPayload(
+      { ...cleanRequest, meta: { schoolName: '测试甲中学', cohort: 'x' } },
+      blacklist,
+    );
+    expect(metaHit.passed).toBe(true);
+    // 学生叙事字段含同一姓名 → 仍拦截
+    const studentHit = scanPayload(
+      { ...cleanRequest, students: [{ ...cleanStudent, visitSummary: '与测试甲同班' }] },
+      blacklist,
+    );
+    expect(studentHit.passed).toBe(false);
+  });
+
   it('禁止字段名出现在 payload → 拒绝', () => {
     const r = scanPayload({ students: [{ 身份证号: 'x', name: 'n' }] }, new Set());
     expect(r.passed).toBe(false);

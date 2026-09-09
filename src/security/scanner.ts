@@ -55,15 +55,19 @@ function walk(
       }
     }
     // 姓名黑名单（字段级定位，替代早期对整份 JSON 的全文匹配——可指出具体学生与字段）
-    for (const name of nameBlacklist) {
-      if (name.length >= 2 && node.includes(name)) {
-        findings.push({
-          category: 'name-blacklist',
-          label: '检测到名单中的姓名',
-          field: path,
-          snippet: maskSnippet(name),
-        });
-        return;
+    // 学校名称豁免：校名是必发元数据且可能恰含学生姓名（如「XX中学」），不属于泄漏；
+    // 出站 wire 的 school.name 走空黑名单天然不查，此处豁免仅覆盖本地 meta 的 schoolName。
+    if (!isSchoolName) {
+      for (const name of nameBlacklist) {
+        if (name.length >= 2 && node.includes(name)) {
+          findings.push({
+            category: 'name-blacklist',
+            label: '检测到名单中的姓名',
+            field: path,
+            snippet: maskSnippet(name),
+          });
+          return;
+        }
       }
     }
     // 地址子句检测（与清洗器同源逻辑）：同一子句内互异地址词 ≥2 个 → 命中
