@@ -55,24 +55,32 @@ export default function ImportStep({
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [queue, setQueue] = useState<QueuedFile[]>([]);
+  /** 队列实时镜像：与 state 同步推进（解析判定与移除都基于本镜像，杜绝闭包/批处理时序竞态） */
+  const queueRef = useRef<QueuedFile[]>([]);
+  /** 待解析文件队列（解析串行化：同一时刻只有一个 drain 在跑，避免并发解析互抢「首份」基线） */
+  const pendingRef = useRef<File[]>([]);
+  const drainingRef = useRef(false);
   /** 选文件过程中的即时提示（跨校/解析失败等）；出现期间分析按钮锁定 */
   const [notices, setNotices] = useState<string[]>([]);
   const [parsing, setParsing] = useState(false);
-  const baseSchoolRef = useRef<string | null>(null);
+
+  /** 同步推进 state 与镜像 */
+  const syncQueue = (next: QueuedFile[]) => {
+    queueRef.current = next;
+    setQueue([...next]);
+  };
 
   const baseSchool = queue.length > 0 ? queue[0].schoolName : null;
 
-  /** 校验并加入：选择/拖入即本地解析 → 即时识别学校；跨校/异常当场提示并忽略 */
-  const enqueue = async (incoming: File[]) => {
-    if (incoming.length === 0) return;
+  /** 串行处理待解析文件：逐份本地解析 → 即时识别学校 → 跨校/异常提示并忽略 */
+  const drain = async () => {
+    if (drainingRef.current) return;
+    drainingRef.current = true;
     setParsing(true);
-    const fresh: QueuedFile[] = [];
     const newNotices: string[] = [];
-    const seen = new Set(queue.map((q) => q.file.name));
-    for (const f of incoming) {
-      if (!/\.(xlsx|xls)$/i.test(f.name)) continue;
-      if (seen.has(f.name)) continue; // 同名重复选择忽略
-      seen.add(f.name);
+    while (pendingRef.current.length > 0) {
+      const f = pendingRef.current.shift()!;
+      if (queueRef.current.some((q) => q.file.name === f.name)) continue; // 同名判重（实时）
 
       let school: string | null = null;
       let problem: string | null = null;
@@ -88,35 +96,38 @@ export default function ImportStep({
         newNotices.push(`「${f.name}」${problem}，已忽略该文件。`);
         continue;
       }
-      const base = baseSchoolRef.current;
+      // 基线 = 此刻已入队首份（移除全部后重新选校也由此自然生效）
+      const base = queueRef.current[0]?.schoolName ?? null;
       if (base === null) {
-        // 首份：成为基座学校
-        baseSchoolRef.current = school;
-        fresh.push({ id: uid(), file: f, schoolName: school! });
+        syncQueue([...queueRef.current, { id: uid(), file: f, schoolName: school! }]);
         continue;
       }
       if (normSchool(school!) !== normSchool(base)) {
         newNotices.push(`「${f.name}」属于「${school}」，与已选学校「${base}」不是同一所学校。一次只能分析同一所学校，已忽略该文件。`);
         continue;
       }
-      fresh.push({ id: uid(), file: f, schoolName: school! });
+      syncQueue([...queueRef.current, { id: uid(), file: f, schoolName: school! }]);
     }
-    if (fresh.length > 0) setQueue((prev) => [...prev, ...fresh]);
+    drainingRef.current = false;
     if (newNotices.length > 0) setNotices((prev) => [...prev, ...newNotices]);
     setParsing(false);
   };
 
+  /** 加入待解析队列（可一次多选/多文件拖入；解析串行执行） */
+  const enqueue = (incoming: File[]) => {
+    const valid = incoming.filter((f) => /\.(xlsx|xls)$/i.test(f.name));
+    if (valid.length === 0) return;
+    pendingRef.current.push(...valid);
+    void drain();
+  };
+
   const removeFile = (id: string) => {
-    setQueue((prev) => {
-      const next = prev.filter((q) => q.id !== id);
-      if (prev.length > 0 && next.length === 0) baseSchoolRef.current = null;
-      return next;
-    });
+    syncQueue(queueRef.current.filter((q) => q.id !== id));
   };
 
   const clearAll = () => {
-    setQueue([]);
-    baseSchoolRef.current = null;
+    pendingRef.current = [];
+    syncQueue([]);
   };
 
   const onDrop = (e: DragEvent) => {
