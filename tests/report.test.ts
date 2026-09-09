@@ -199,6 +199,11 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(html).not.toMatch(/https?:\/\//); // 零外部依赖（无 CDN/图片/脚本外链）
     expect(html).not.toContain('建议通过');
     expect(html).not.toContain('建议淘汰');
+    // 学生搜索（带姓名时渲染：单文件内联 JS，输入定位 + 学生锚点 + 打印隐藏）
+    expect(html).toContain('id="studentSearch"');
+    expect(html).toContain('id="stu-student-001"');
+    expect(html).toContain('scrollIntoView');
+    expect(html).toContain('.search-bar { display: none; }');
     // 保密提示置顶（红色警示条，位于横幅之前）、版权/作者在页脚
     expect(html).toContain('保密提示：本报告含学生个人信息，仅供走访工作使用，严禁外传或用于其他用途。');
     expect(html.indexOf('保密提示')).toBeLessThan(html.indexOf('class="banner"'));

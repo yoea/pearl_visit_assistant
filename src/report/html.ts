@@ -98,7 +98,7 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     const questions = g.interviewQuestions.map((q, i) =>
       `<li><span class="num">${i + 1}</span>${escapeHtml(q)}</li>`).join('');
     return `
-<section class="student">
+<section class="student" id="stu-${g.studentId}">
   <h3>${escapeHtml(title)}${reviewStatus ? ` <span class="tag tag-mid">审核状态：${escapeHtml(reviewStatus)}</span>` : ''}</h3>
   ${highFactors.length > 0
     ? `<div class="banner-warn">重点困难：${highFactors.map((f) =>
@@ -188,6 +188,16 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   .num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 11px; font-weight: 600; flex-shrink: 0; }
   .guide { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; background: #fff; }
   .guide h4 { margin: 0 0 6px; font-size: 13px; color: #334155; }
+  .search-bar { position: relative; max-width: 340px; margin: 0 0 12px; }
+  .search-bar input { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none; }
+  .search-bar input:focus { border-color: #10b981; }
+  #searchResults { display: none; position: absolute; z-index: 30; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 0; list-style: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.08); max-height: 240px; overflow: auto; }
+  #searchResults li { padding: 7px 12px; font-size: 13px; cursor: pointer; }
+  #searchResults li:hover { background: #ecfdf5; }
+  #searchResults li .sub { color: #94a3b8; font-size: 11px; margin-left: 6px; }
+  #searchResults li.empty { color: #94a3b8; cursor: default; }
+  .flash { animation: flashBg 1.6s ease-out; }
+  @keyframes flashBg { 0% { background: #fef3c7; } 100% { background: #fff; } }
   @media print {
     /* A4 打印优化策略：
        ① 大容器（.card/.student）允许跨页流动——绝不用 break-inside: avoid 硬塞，
@@ -220,6 +230,7 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     /* 打印时强制展开基本情况折叠（[hidden] 优先级低于本规则：本规则置于其后） */
     [hidden] { display: block !important; }
     .fold-toggle { display: none; }
+    .search-bar { display: none; }
   }
   @media (max-width: 640px) {
     body { font-size: 13px; }
@@ -290,6 +301,12 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
 
   <div class="card">
     <h2>二、单个学生面谈参考</h2>
+    ${nameIndex && nameIndex.size > 0 ? `
+    <!-- 学生搜索（与页面一致：输入姓名实时下拉 → 点击定位到该学生） -->
+    <div class="search-bar">
+      <input id="studentSearch" type="text" placeholder="输入学生姓名快速定位…" autocomplete="off">
+      <ul id="searchResults"></ul>
+    </div>` : ''}
     ${studentSections}
   </div>
 
@@ -313,7 +330,8 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   </div>
 </div>
 <script>
-// 基本情况折叠：与平台页面一致，点击标题展开/收起（纯内联，无外部依赖）
+// 报告文件内置脚本（纯内联，无外部依赖）：
+// 1) 基本情况折叠（与平台页面一致）
 document.querySelectorAll('.fold-head').forEach(function (h) {
   h.addEventListener('click', function () {
     var body = h.nextElementSibling;
@@ -323,6 +341,57 @@ document.querySelectorAll('.fold-head').forEach(function (h) {
     if (t) t.textContent = open ? '收起' : '展开';
   });
 });
+// 2) 学生搜索：输入姓名实时下拉 → 点击定位到该学生并高亮（数据即页面内姓名）
+(function () {
+  var input = document.getElementById('studentSearch');
+  var list = document.getElementById('searchResults');
+  if (!input || !list) return;
+  var names = ${JSON.stringify(Object.fromEntries(nameIndex?.entries() ?? [])).replace(/</g, '\\u003c')};
+  var ids = Object.keys(names);
+  function render(q) {
+    var t = q.trim();
+    list.innerHTML = '';
+    if (t === '') { list.style.display = 'none'; return; }
+    var hits = ids.filter(function (id) { return names[id].includes(t) || id.includes(t); }).slice(0, 10);
+    if (hits.length === 0) {
+      var li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = '未找到匹配的学生';
+      list.appendChild(li);
+    } else {
+      hits.forEach(function (id) {
+        var li = document.createElement('li');
+        li.innerHTML = '<span>' + names[id].replace(/</g, '&lt;') + '</span><span class="sub">' + id + '</span>';
+        li.addEventListener('click', function () { locate(id); });
+        list.appendChild(li);
+      });
+    }
+    list.style.display = 'block';
+  }
+  function locate(id) {
+    input.value = '';
+    list.style.display = 'none';
+    var el = document.getElementById('stu-' + id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.classList.remove('flash');
+    void el.offsetWidth; // 重启动画
+    el.classList.add('flash');
+    // 定位后展开该生折叠的基本情况
+    var fold = el.querySelector('.fold-head');
+    if (fold && fold.nextElementSibling && fold.nextElementSibling.hidden) {
+      fold.nextElementSibling.hidden = false;
+      var tg = fold.querySelector('.fold-toggle');
+      if (tg) tg.textContent = '收起';
+    }
+  }
+  input.addEventListener('input', function () { render(input.value); });
+  input.addEventListener('focus', function () { render(input.value); });
+  input.addEventListener('keydown', function (e) { if (e.key === 'Escape') { input.value = ''; list.style.display = 'none'; } });
+  document.addEventListener('click', function (e) {
+    if (!input.contains(e.target) && !list.contains(e.target)) list.style.display = 'none';
+  });
+})();
 </script>
 </body>
 </html>
