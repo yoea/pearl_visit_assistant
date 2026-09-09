@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { pipelineReducer } from './state/pipeline';
-import { parseExcel } from './excel/excel-parser';
+import { parseExcel, type ParsedExcel } from './excel/excel-parser';
 import { mapFields } from './anonymization/field-mapper';
+import { normalizeHeader } from './anonymization/field-policies';
 import { rawStore } from './anonymization/raw-store';
 import { anonymize } from './anonymization/anonymizer';
 import { scanPayload } from './security/scanner';
@@ -29,6 +30,9 @@ import ReportArchiveList from './components/ReportArchiveList';
 import HelpPage from './components/HelpPage';
 
 const usageStats = new InMemoryUsageStats();
+
+/** 导入校验类错误（如跨学校）：消息为固定中文提示，直接展示给用户 */
+class ImportValidationError extends Error {}
 // provider 种类由环境变量决定（mock 默认 / real），网络 provider 仅工厂内部构造
 const analysisService = createAnalysisService();
 
@@ -63,36 +67,65 @@ export default function App() {
   const mappingRef = useRef<MappedColumn[]>([]);
 
   /**
-   * 导入即自动串联：解析 → 映射 → 脱敏 → 扫描，一次点击直达合并检查页（scanned）。
+   * 导入即自动串联：多文件（限同校）解析 → 合并 → 映射 → 脱敏 → 扫描，
+   * 一次点击直达合并检查页（scanned）。
+   * 不同学校的表格会明确提示并中止；同校多份名单合并生成一份报告。
    * 关键：全程局部变量驱动，禁用 state.stage 守卫——批处理下读旧值会丢事件导致白屏。
    * 自动流转 ≠ 自动发送：AI 分析仍必须用户在检查页手动点击确认。
    */
-  const handleFile = useCallback(async (buffer: ArrayBuffer) => {
+  const handleFiles = useCallback(async (files: File[]) => {
     setImportError(undefined);
     setAnalyzeError(undefined);
-    let parsed;
     try {
-      parsed = parseExcel(buffer);
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : '文件解析失败');
-      return;
-    }
-    try {
-      const records: RawStudentRecord[] = parsed.rows.map((values, i) => ({
-        sourceRow: parsed.rowNumbers[i], // 保留真实工作表行号（跳过空行后仍准确）
-        values,
-      }));
+      // 逐个解析（失败时带文件名提示；parseExcel 抛错文案为固定中文）
+      const parsedAll: ParsedExcel[] = [];
+      for (const f of files) {
+        try {
+          parsedAll.push(parseExcel(await f.arrayBuffer()));
+        } catch (e) {
+          throw new ImportValidationError(`「${f.name}」无法解析：${e instanceof Error ? e.message : '文件格式错误'}`);
+        }
+      }
+
+      // 学校一致性校验：每份都须识别出学校名称且与第一份相同
+      const names = parsedAll.map((p) => (p.schoolName ?? '').trim());
+      const missingIdx = names.findIndex((n) => n === '');
+      if (missingIdx >= 0) {
+        throw new ImportValidationError(`「${files[missingIdx].name}」未识别到学校名称列，无法确认学校归属，请检查后单独上传。`);
+      }
+      const firstSchool = names[0];
+      const diffIdx = names.findIndex((n) => n !== firstSchool);
+      if (diffIdx >= 0) {
+        throw new ImportValidationError(`检测到不同学校的表格：「${files[diffIdx].name}」属于「${names[diffIdx]}」，与已选「${firstSchool}」不是同一所学校。一次只能分析同一所学校，请移除该文件后重试。`);
+      }
+
+      // 列结构一致性兜底：同校同模板才能合并（避免静默丢字段）
+      const headerSets = parsedAll.map((p) => new Set(p.headers.filter((h) => h !== '').map(normalizeHeader)));
+      const firstSet = headerSets[0];
+      const mismatchIdx = headerSets.findIndex((s) => s.size !== firstSet.size || [...s].some((h) => !firstSet.has(h)));
+      if (mismatchIdx >= 0) {
+        throw new ImportValidationError(`「${files[mismatchIdx].name}」的列结构与第一份表格不一致（可能模板不同）。请使用同一模板的表格。`);
+      }
+
+      const first = parsedAll[0];
+      const records: RawStudentRecord[] = parsedAll.flatMap((p) =>
+        p.rows.map((values, i) => ({
+          sourceRow: p.rowNumbers[i], // 保留真实工作表行号（跳过空行后仍准确）
+          values,
+        })));
       rawStore.setRecords(records);
       usageStats.record('imported', { studentCount: records.length });
-      reportFileUploaded(APP_VERSION, records.length); // 上传表格计数（白名单数字）
-      const mapping = mapFields(parsed.headers);
+      for (const p of parsedAll) {
+        reportFileUploaded(APP_VERSION, p.rows.length); // 每份表格各计一次上传（白名单数字）
+      }
+      const mapping = mapFields(first.headers);
       const parsedState: ParsedState = {
-        schoolName: parsed.schoolName ?? '未识别学校',
-        cohort: parsed.cohort ?? '未填写',
-        sheetName: parsed.sheetName,
-        rowCount: parsed.rows.length,
-        fieldCount: parsed.headers.filter((h) => h !== '').length,
-        headerRowIndex: parsed.headerRowIndex,
+        schoolName: first.schoolName ?? '未识别学校',
+        cohort: first.cohort ?? '未填写',
+        sheetName: `${first.sheetName}${parsedAll.length > 1 ? ` 等 ${parsedAll.length} 个工作表` : ''}`,
+        rowCount: records.length,
+        fieldCount: first.headers.filter((h) => h !== '').length,
+        headerRowIndex: first.headerRowIndex,
         mappedColumns: mapping.mappedColumns,
       };
       metaRef.current = { schoolName: parsedState.schoolName, cohort: parsedState.cohort };
@@ -123,10 +156,15 @@ export default function App() {
         }
       }
       dispatch({ type: 'SCAN_SUCCEEDED', output: finalOutput, scan, autoCleaned, cleanIssues });
-    } catch {
-      // 意外异常兜底：固定文案 + 重置，绝不含技术错误细节
+    } catch (e) {
+      // 校验类错误（跨学校/结构不一致等）：固定中文文案直显；
+      // 其余意外异常：固定文案 + 重置，绝不含技术错误细节
       rawStore.clear();
-      setImportError('文件处理失败，请检查文件后重新导入。');
+      setImportError(
+        e instanceof ImportValidationError
+          ? e.message
+          : '文件处理失败，请检查文件后重新导入。',
+      );
       dispatch({ type: 'RESET' });
     }
   }, []);
@@ -276,7 +314,7 @@ export default function App() {
         {/* 查看存档报告时独占主区域（首页列表不再堆叠显示） */}
         {!showHelp && state.stage === 'idle' && !archivedView && (
           <>
-            <ImportStep onFile={handleFile} error={importError} />
+            <ImportStep onFiles={handleFiles} error={importError} />
             <div className="mt-4"><ReportArchiveList onOpen={handleOpenArchived} /></div>
           </>
         )}
