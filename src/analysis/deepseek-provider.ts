@@ -3,6 +3,7 @@ import { SecurityViolationError } from './analysis-service';
 import { AnalysisClient, AnalysisClientError } from './analysis-client';
 import {
   createAnalysisPayload, scanOutboundPayload,
+  createSchoolSummaryPayload, scanSchoolSummaryPayload,
   type WireAnalysisResponse,
 } from './payload';
 import type { AnalysisProvider, AnalysisResult, TokenUsage } from './provider';
@@ -73,7 +74,8 @@ function newRequestId(): string {
  * 安全链：重扫②（不信任调用方）→ createAnalysisPayload（唯一出站构造点）→ 出站终扫③ → fetch。
  * 任何一步失败即抛 SecurityViolationError / AnalysisClientError，绝不发送。
  * 大批量策略：学生按 CHUNK_SIZE 分批并行请求，全部成功后汇总——
- * students 按批序合并、schoolAnalysis 取首批、整体 id 一一对应校验。
+ * students 按批序合并、整体 id 一一对应校验；**学校级归纳另起一次汇总调用**合并全部批次
+ * （每批只见到自己那 ≤10 人，直接取首批会让学校整体情况/材料质量提示漏掉后面的学生）。
  * 单批输出被截断（truncated）时自动拆半重试（见 analyzeBatch）。
  * 本类与 AnalysisClient 不公共导出：仅 provider-factory 内部构造。
  */
@@ -113,7 +115,7 @@ export class DeepSeekAnalysisProvider implements AnalysisProvider {
           this.analyzeBatch(meta, students.slice(mid), totalStudents),
         ]);
         return {
-          // schoolAnalysis 仍取前半批的结果，与"取首批"的既有口径一致
+          // 分片的 schoolAnalysis 会在最后被全校汇总调用取代，这里取前半片仅为占位
           result: {
             ...halves[0].result,
             students: halves.flatMap((h) => h.result.students),
@@ -141,14 +143,33 @@ export class DeepSeekAnalysisProvider implements AnalysisProvider {
     const results = await mapWithConcurrency(chunks, MAX_CONCURRENCY, (chunk) =>
       this.analyzeBatch(chunk.meta, chunk.students, request.students.length));
 
-    // 汇总：students 按批序合并；schoolAnalysis 取首批（基于首批学生视角的学校级归纳）
+    // students 按批序合并
+    const students = results.flatMap((r) => r.result.students);
+
+    // 学校级归纳必须覆盖全校，**不能取首批**：每批只见到自己的 ≤10 名学生，
+    // 取首批会让「学校整体情况」「材料质量提示」等只反映前 10 名学生。
+    // 因此把各批的学校级归纳交给一次汇总调用合并、去重、归纳成全校结论。
+    const summaryPayload = createSchoolSummaryPayload(
+      request, results.map((r) => r.result.schoolAnalysis), newRequestId(), request.students.length,
+    );
+    // 汇总请求的出站终扫③：模型产出的学校级文案仍可能混入敏感片段，照常扫描后才发送
+    const summaryScan = scanSchoolSummaryPayload(summaryPayload);
+    if (!summaryScan.passed) {
+      throw new SecurityViolationError(summaryScan.findings);
+    }
+    // 汇总输出只有一个 schoolAnalysis（量级远小于 32768 上限），故不做拆批重试；
+    // 若仍被截断则按 truncated 上报
+    const summary = await this.client.summarizeSchool(summaryPayload);
+
     const wire: WireAnalysisResponse = {
-      ...results[0].result,
-      students: results.flatMap((r) => r.result.students),
+      version: results[0].result.version,
+      schoolAnalysis: summary.result.schoolAnalysis,
+      students,
     };
     assertStudentMatch(request, wire);
-    // token 用量：各批（含批内 JSON 修复重试、截断拆批重试）求和，供统计与本地累计
-    const usage: TokenUsage = results.reduce((sum, r) => addUsage(sum, r.usage), emptyUsage());
+    // token 用量：各批（含批内 JSON 修复重试、截断拆批重试）与汇总调用求和，供统计与本地累计
+    const usage: TokenUsage = [...results.map((r) => r.usage), summary.usage]
+      .reduce((sum, u) => addUsage(sum, u), emptyUsage());
     // wire 响应经 zod 校验后形状与领域结构一致（契约同构），直接作为分析结果
     return { ...wire, usage };
   }

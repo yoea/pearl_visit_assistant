@@ -1,10 +1,11 @@
 import {
-  parseResponseText, wireResponseSchema,
+  parseResponseText, wireResponseSchema, wireSchoolSummaryResponseSchema,
   type WireAnalysisRequest, type WireAnalysisResponse,
+  type WireSchoolSummaryRequest, type WireSchoolSummaryResponse,
 } from './payload';
-import { DEEPSEEK_SYSTEM_PROMPT } from './system-prompt';
+import { DEEPSEEK_SYSTEM_PROMPT, DEEPSEEK_SCHOOL_SUMMARY_PROMPT } from './system-prompt';
 import type { TokenUsage } from './provider';
-import type { ZodError } from 'zod';
+import type { ZodError, ZodType } from 'zod';
 
 export type AnalysisErrorCategory =
   | 'network' | 'timeout' | 'configuration' | 'rate-limited' | 'server' | 'format' | 'truncated';
@@ -65,6 +66,7 @@ const REPAIR_JSON_HINT = '你的上一轮输出无法解析为 JSON。请只输�
 /**
  * 纯网络层：唯一 fetch 出口（no-persistence 守卫白名单锁定本文件）。
  * 只接受 WireAnalysisRequest（原始对象类型在此编译期不兼容）。
+ * 两个公开入口共用同一套策略：analyze（逐生分析）与 summarizeSchool（学校级归纳汇总）。
  * 职责：POST DeepSeek（直连，Authorization Bearer Key）→ 状态码分类
  * → choices[0].message.content 提取 → JSON 修复一次 → zod 校验；
  * 模型输出不合格（JSON 修复失败/结构校验失败）时带修正提示自动重试一次，两次失败才报 format。
@@ -76,11 +78,42 @@ export class AnalysisClient {
   constructor(private readonly config: AnalysisClientConfig) {}
 
   async analyze(payload: WireAnalysisRequest): Promise<{ result: WireAnalysisResponse; usage: TokenUsage }> {
-    const messages: ChatMessage[] = [
-      { role: 'system', content: DEEPSEEK_SYSTEM_PROMPT },
-      { role: 'user', content: JSON.stringify(payload) },
-    ];
-    // 每次真实 API 调用都计入 apiCalls（JSON 修复重试是另一次调用、另一次计费）
+    return this.runWithRepair(
+      [
+        { role: 'system', content: DEEPSEEK_SYSTEM_PROMPT },
+        { role: 'user', content: JSON.stringify(payload) },
+      ],
+      wireResponseSchema,
+    );
+  }
+
+  /**
+   * 学校级归纳汇总（分批分析的二次汇总）。
+   * 与 analyze 完全共用请求/修复重试/截断识别策略，只是换成汇总提示词与
+   * 「只含 version + schoolAnalysis」的响应契约。
+   */
+  async summarizeSchool(
+    payload: WireSchoolSummaryRequest,
+  ): Promise<{ result: WireSchoolSummaryResponse; usage: TokenUsage }> {
+    return this.runWithRepair(
+      [
+        { role: 'system', content: DEEPSEEK_SCHOOL_SUMMARY_PROMPT },
+        { role: 'user', content: JSON.stringify(payload) },
+      ],
+      wireSchoolSummaryResponseSchema,
+    );
+  }
+
+  /**
+   * 共用的「请求 → JSON 修复一次 → zod 校验」循环。
+   * 模型输出不合格时带修正提示自动重试一次，两次失败才报 format；
+   * finish_reason=length 由 requestContent 直接抛 truncated（不进入重试）。
+   * 每次真实 API 调用都计入 apiCalls（修复重试是另一次调用、另一次计费）。
+   */
+  private async runWithRepair<T>(
+    messages: ChatMessage[],
+    schema: ZodType<T>,
+  ): Promise<{ result: T; usage: TokenUsage }> {
     const usage: TokenUsage = { apiCalls: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 };
     for (let attempt = 0; ; attempt++) {
       const { content, usage: attemptUsage } = await this.requestContent(messages);
@@ -94,7 +127,7 @@ export class AnalysisClient {
         messages.push({ role: 'user', content: REPAIR_JSON_HINT });
         continue;
       }
-      const parsed = wireResponseSchema.safeParse(raw);
+      const parsed = schema.safeParse(raw);
       if (parsed.success) return { result: parsed.data, usage };
       if (attempt >= 1) throw new AnalysisClientError('format');
       messages.push({ role: 'user', content: correctionHint(parsed.error) });

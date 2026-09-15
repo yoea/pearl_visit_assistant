@@ -37,6 +37,24 @@ const wireResponse = (ids: string[]) => ({
   })),
 });
 
+/** 汇总调用响应：只含 version + schoolAnalysis（不返回 students） */
+function summaryResponse(overview: string, dataQualityIssues: string[] = []) {
+  return {
+    version: '1.0',
+    schoolAnalysis: {
+      overview, studentCount: 1,
+      difficultyPatterns: [], commonIssues: [], dataQualityIssues,
+      keyVerificationTopics: [], interviewSuggestions: [],
+    },
+  };
+}
+
+/** 判据：请求体带 batchAnalyses 即为学校级汇总调用（批次请求带 students） */
+function isSummaryCall(init: { body: string }): boolean {
+  const wire = JSON.parse(JSON.parse(init.body).messages[1].content);
+  return Array.isArray(wire.batchAnalyses);
+}
+
 /** DeepSeek 响应壳（直连模式）；usage / finish_reason 可选（缺省 = 无该字段） */
 function deepseekResponse(
   content: string, usage?: Record<string, unknown>, finishReason?: string,
@@ -82,13 +100,13 @@ describe('DeepSeekAnalysisProvider', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('通过后 fetch 恰一次，user 消息为脱敏 payload（requestId 为 UUID）', async () => {
+  it('通过后 fetch 两次（1 批 + 1 次全校汇总），user 消息为脱敏 payload（requestId 为 UUID）', async () => {
     const { provider, fetchMock } = makeProvider();
     const result = await provider.analyze(request);
     expect(result.students[0].studentId).toBe('student-001');
-    // 上游未返回 usage 时按 0 聚合（统计不失败，主流程不受影响）
-    expect(result.usage).toEqual({ apiCalls: 1, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // 上游未返回 usage 时按 0 聚合（统计不失败，主流程不受影响）；两次调用各计 1
+    expect(result.usage).toEqual({ apiCalls: 2, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(DEEPSEEK_API_URL);
     const body = JSON.parse(init.body);
@@ -160,16 +178,18 @@ describe('DeepSeekAnalysisProvider', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('超过 10 人自动分批：25 人 → 3 批，合并顺序与分块正确，schoolAnalysis 取首批', async () => {
+  it('超过 10 人自动分批：25 人 → 3 批 + 1 次全校汇总，合并顺序与分块正确', async () => {
     const students25 = Array.from({ length: 25 }, (_, i) => ({
       ...cleanStudent, anonymousId: `student-${String(i + 1).padStart(3, '0')}`,
     }));
     const request25: AnalysisRequest = { meta: request.meta, students: students25 };
 
-    // 动态回显：解析请求中的学生 id，返回对应学生的合法响应
+    // 批次调用动态回显学生 id；汇总调用返回单一 schoolAnalysis
     const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
-      const body = JSON.parse(init.body);
-      const wire = JSON.parse(body.messages[1].content);
+      if (isSummaryCall(init)) {
+        return Promise.resolve(deepseekResponse(JSON.stringify(summaryResponse('全校汇总结果'))));
+      }
+      const wire = JSON.parse(JSON.parse(init.body).messages[1].content);
       const ids = wire.students.map((s: { id: string }) => s.id);
       return Promise.resolve(deepseekResponse(JSON.stringify(wireResponse(ids))));
     });
@@ -179,13 +199,14 @@ describe('DeepSeekAnalysisProvider', () => {
     );
 
     const result = await provider.analyze(request25);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4); // 3 批 + 1 次全校汇总
     expect(result.students).toHaveLength(25);
     // 合并顺序保持原顺序
     expect(result.students.map((s) => s.studentId)).toEqual(students25.map((s) => s.anonymousId));
 
-    // 分块正确：批 1 = 前 10，批 2 = 中 10，批 3 = 后 5
-    const batchIds = fetchMock.mock.calls.map(([, init]) =>
+    // 前 3 次为批次调用；分块正确：批 1 = 前 10，批 2 = 中 10，批 3 = 后 5
+    const batchCalls = fetchMock.mock.calls.slice(0, 3);
+    const batchIds = batchCalls.map(([, init]) =>
       JSON.parse(JSON.parse((init as { body: string }).body).messages[1].content)
         .students.map((s: { id: string }) => s.id));
     expect(batchIds[0]).toEqual(students25.slice(0, 10).map((s) => s.anonymousId));
@@ -193,28 +214,93 @@ describe('DeepSeekAnalysisProvider', () => {
     expect(batchIds[2]).toEqual(students25.slice(20).map((s) => s.anonymousId));
 
     // 每批都携带全校总数（学校级归纳按全校视角）
-    const batchTotals = fetchMock.mock.calls.map(([, init]) =>
+    const batchTotals = batchCalls.map(([, init]) =>
       JSON.parse(JSON.parse((init as { body: string }).body).messages[1].content).school.totalStudents);
     expect(batchTotals).toEqual([25, 25, 25]);
 
-    // schoolAnalysis 取首批
-    expect(result.schoolAnalysis.studentCount).toBe(1);
+    // schoolAnalysis 来自全校汇总调用，**不再取首批**（取首批会让整体情况只反映前 10 人）
+    expect(result.schoolAnalysis.overview).toBe('全校汇总结果');
   });
 
-  it('多批 token 用量求和：15 人 → 2 批，usage 为各批之和', async () => {
+  it('全校汇总请求携带全部批次归纳、不含学生个体字段，且总数按全校计', async () => {
+    const students25 = Array.from({ length: 25 }, (_, i) => ({
+      ...cleanStudent, anonymousId: `student-${String(i + 1).padStart(3, '0')}`,
+    }));
+    const request25: AnalysisRequest = { meta: request.meta, students: students25 };
+
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
+      if (isSummaryCall(init)) {
+        return Promise.resolve(deepseekResponse(JSON.stringify(summaryResponse('汇总'))));
+      }
+      const wire = JSON.parse(JSON.parse(init.body).messages[1].content);
+      const ids = wire.students.map((s: { id: string }) => s.id);
+      return Promise.resolve(deepseekResponse(JSON.stringify(wireResponse(ids))));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new DeepSeekAnalysisProvider(
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
+    );
+
+    await provider.analyze(request25);
+
+    const summaryInit = fetchMock.mock.calls[3][1] as { body: string };
+    const summaryWire = JSON.parse(JSON.parse(summaryInit.body).messages[1].content);
+    expect(summaryWire.batchCount).toBe(3);
+    expect(summaryWire.batchAnalyses).toHaveLength(3);
+    expect(summaryWire.school).toEqual({ name: '某中学', totalStudents: 25 });
+    // 学生个体字段绝不出现在汇总请求中（只有学校级归纳）
+    expect(JSON.stringify(summaryWire)).not.toContain('"students"');
+    expect(JSON.stringify(summaryWire)).not.toContain('"data"');
+    expect(JSON.stringify(summaryWire)).not.toContain(cleanStudent.familySituation as string);
+    // 汇总使用汇总提示词
+    expect(JSON.parse(summaryInit.body).messages[0].content).toContain('学校级归纳汇总');
+  });
+
+  it('各批学校级归纳混入敏感片段 → 汇总出站前被拦截（不发出汇总请求）', async () => {
     const students15 = Array.from({ length: 15 }, (_, i) => ({
       ...cleanStudent, anonymousId: `student-${String(i + 1).padStart(3, '0')}`,
     }));
     const request15: AnalysisRequest = { meta: request.meta, students: students15 };
 
-    // 动态回显 + 每批固定 usage：批 1 = 1000/400，批 2 = 600/200
-    let call = 0;
     const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
-      call += 1;
-      const body = JSON.parse(init.body);
-      const wire = JSON.parse(body.messages[1].content);
+      const wire = JSON.parse(JSON.parse(init.body).messages[1].content);
       const ids = wire.students.map((s: { id: string }) => s.id);
-      const usage = call === 1
+      const base = wireResponse(ids);
+      const bad = {
+        ...base,
+        schoolAnalysis: { ...base.schoolAnalysis, dataQualityIssues: ['材料中混入电话13800138000'] },
+      };
+      return Promise.resolve(deepseekResponse(JSON.stringify(bad)));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new DeepSeekAnalysisProvider(
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
+    );
+
+    await expect(provider.analyze(request15)).rejects.toBeInstanceOf(SecurityViolationError);
+    // 两批都已返回（并发），但汇总请求因扫描未通过而没有发出
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('多批 token 用量求和：15 人 → 2 批 + 1 次汇总，usage 为各次调用之和', async () => {
+    const students15 = Array.from({ length: 15 }, (_, i) => ({
+      ...cleanStudent, anonymousId: `student-${String(i + 1).padStart(3, '0')}`,
+    }));
+    const request15: AnalysisRequest = { meta: request.meta, students: students15 };
+
+    // 批 1 = 1000/400，批 2 = 600/200，汇总 = 300/100
+    let batchCall = 0;
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
+      const wire = JSON.parse(JSON.parse(init.body).messages[1].content);
+      if (Array.isArray(wire.batchAnalyses)) {
+        return Promise.resolve(deepseekResponse(
+          JSON.stringify(summaryResponse('汇总')),
+          { prompt_tokens: 300, completion_tokens: 100, prompt_cache_hit_tokens: 0 },
+        ));
+      }
+      batchCall += 1;
+      const ids = wire.students.map((s: { id: string }) => s.id);
+      const usage = batchCall === 1
         ? { prompt_tokens: 1000, completion_tokens: 400, prompt_cache_hit_tokens: 250 }
         : { prompt_tokens: 600, completion_tokens: 200, prompt_cache_hit_tokens: 0 };
       return Promise.resolve(deepseekResponse(JSON.stringify(wireResponse(ids)), usage));
@@ -227,7 +313,7 @@ describe('DeepSeekAnalysisProvider', () => {
     const result = await provider.analyze(request15);
     expect(result.students).toHaveLength(15);
     expect(result.usage).toEqual({
-      apiCalls: 2, promptTokens: 1600, completionTokens: 600, cacheHitTokens: 250,
+      apiCalls: 3, promptTokens: 1900, completionTokens: 700, cacheHitTokens: 250,
     });
   });
 
@@ -255,9 +341,12 @@ describe('DeepSeekAnalysisProvider', () => {
     }));
     const request4: AnalysisRequest = { meta: request.meta, students: students4 };
 
-    // 整批（4 人）返回截断壳；拆半后（各 2 人）正常返回
+    // 整批（4 人）返回截断壳；拆半后（各 2 人）正常返回；最后再来一次全校汇总
     const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
       const wire = JSON.parse(JSON.parse(init.body).messages[1].content);
+      if (Array.isArray(wire.batchAnalyses)) {
+        return Promise.resolve(deepseekResponse(JSON.stringify(summaryResponse('汇总'))));
+      }
       const ids = wire.students.map((s: { id: string }) => s.id);
       const truncated = ids.length > 2;
       return Promise.resolve(deepseekResponse(
@@ -272,19 +361,20 @@ describe('DeepSeekAnalysisProvider', () => {
     );
 
     const result = await provider.analyze(request4);
-    expect(fetchMock).toHaveBeenCalledTimes(3); // 1 次整批（截断）+ 2 次半批
+    expect(fetchMock).toHaveBeenCalledTimes(4); // 1 次整批（截断）+ 2 次半批 + 1 次全校汇总
     expect(result.students.map((s) => s.studentId)).toEqual(students4.map((s) => s.anonymousId));
 
     // 拆批顺序：先试整批，失败后前 2 / 后 2
-    const sentIds = fetchMock.mock.calls.map(([, init]) =>
+    const sentIds = fetchMock.mock.calls.slice(0, 3).map(([, init]) =>
       JSON.parse(JSON.parse((init as { body: string }).body).messages[1].content)
         .students.map((s: { id: string }) => s.id));
     expect(sentIds[0]).toEqual(students4.map((s) => s.anonymousId));
     expect(sentIds[1]).toEqual(students4.slice(0, 2).map((s) => s.anonymousId));
     expect(sentIds[2]).toEqual(students4.slice(2).map((s) => s.anonymousId));
 
-    // 被截断的那次调用不返回 usage（失败调用本就不上报用量），故只累计两次成功的分片
-    expect(result.usage).toEqual({ apiCalls: 2, promptTokens: 200, completionTokens: 100, cacheHitTokens: 0 });
+    // 被截断的那次调用不返回 usage（失败调用本就不上报用量）；
+    // 计入的是两次成功的分片 + 一次汇总（汇总无 usage 仍计 1 次调用）
+    expect(result.usage).toEqual({ apiCalls: 3, promptTokens: 200, completionTokens: 100, cacheHitTokens: 0 });
   });
 
   it('拆到单名学生仍被截断 → 向上抛 truncated，不无限递归', async () => {

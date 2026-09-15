@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   PROTOCOL_VERSION, SENT_FIELDS, createAnalysisPayload, scanOutboundPayload,
   wireResponseSchema, parseResponseText,
+  createSchoolSummaryPayload, scanSchoolSummaryPayload,
 } from '../src/analysis/payload';
 import type { AnalysisRequest, AnonymizedStudent } from '../src/types/student';
 
@@ -186,5 +187,54 @@ describe('parseResponseText（JSON 修复一次）', () => {
   it('escaped 引号不提前终止字符串（修复路径解析成功）', () => {
     // 带前缀文本：直接 JSON.parse 必失败，必须走 extractJsonObject 修复分支
     expect(parseResponseText('说明文字\n{"a":"\\"}"}')).toEqual({ a: '"}' });
+  });
+});
+
+describe('学校级归纳汇总的载荷与扫描', () => {
+  const batchAnalysis = (overview: string, dataQualityIssues: string[] = []) => ({
+    overview, studentCount: 10,
+    difficultyPatterns: ['困难模式'], commonIssues: ['共性问题'],
+    dataQualityIssues, keyVerificationTopics: ['待核实'], interviewSuggestions: ['建议'],
+  });
+
+  it('汇总载荷只含学校级归纳，不含任何学生个体字段', () => {
+    const payload = createSchoolSummaryPayload(request, [batchAnalysis('批 1'), batchAnalysis('批 2')], 'sum-1', 25);
+    expect(payload.batchCount).toBe(2);
+    expect(payload.school).toEqual({ name: request.meta.schoolName, totalStudents: 25 });
+    expect(Object.keys(payload.batchAnalyses[0]).sort()).toEqual([
+      'commonIssues', 'dataQualityIssues', 'difficultyPatterns', 'interviewSuggestions',
+      'keyVerificationTopics', 'overview', 'studentCount',
+    ]);
+    const json = JSON.stringify(payload);
+    expect(json).not.toContain('"students"');
+    expect(json).not.toContain(cleanStudent.familySituation as string);
+  });
+
+  it('硬 PII（电话）混入学校级归纳 → 仍然阻断', () => {
+    const payload = createSchoolSummaryPayload(
+      request, [batchAnalysis('学校整体情况', ['材料中混入电话13800138000'])], 'sum-2',
+    );
+    const result = scanSchoolSummaryPayload(payload);
+    expect(result.passed).toBe(false);
+    expect(result.findings.some((f) => f.category === 'mobile')).toBe(true);
+  });
+
+  it('地址类启发式命中不阻断（地址词表含大量单字，模型叙述必然误报）', () => {
+    // 「农村」「校园」「教室」等常用词同句出现即凑够 2 个地址词，会被地址规则整句判为地址
+    const payload = createSchoolSummaryPayload(
+      request,
+      [batchAnalysis('该校学生均来自农村家庭，学校为寄宿制，学生在校园与教室之间往返。')],
+      'sum-3',
+    );
+    const raw = scanOutboundPayload(createAnalysisPayload(request, 'raw', 1)); // 主请求扫描行为不变
+    expect(raw.passed).toBe(true);
+    const result = scanSchoolSummaryPayload(payload);
+    expect(result.passed).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('requestId 与校名照常豁免（非学生元数据）', () => {
+    const payload = createSchoolSummaryPayload(request, [batchAnalysis('学校整体情况')], 'sum-4');
+    expect(scanSchoolSummaryPayload(payload).passed).toBe(true);
   });
 });

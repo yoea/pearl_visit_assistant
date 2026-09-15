@@ -3,7 +3,7 @@ import {
   AnalysisClient, AnalysisClientError, CATEGORY_MESSAGES, DEFAULT_TIMEOUT_MS, DEEPSEEK_API_URL,
   MAX_OUTPUT_TOKENS,
 } from '../src/analysis/analysis-client';
-import { createAnalysisPayload } from '../src/analysis/payload';
+import { createAnalysisPayload, createSchoolSummaryPayload } from '../src/analysis/payload';
 import type { AnalysisRequest, AnonymizedStudent } from '../src/types/student';
 
 const cleanStudent: AnonymizedStudent = {
@@ -103,6 +103,63 @@ describe('AnalysisClient', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { result } = await client.analyze(payload);
     expect(result.students[0].studentId).toBe('student-001');
+  });
+
+  it('summarizeSchool：走汇总提示词与「只含 schoolAnalysis」契约，请求不含学生个体字段', async () => {
+    const summaryPayload = createSchoolSummaryPayload(request, [{
+      overview: '批 1 视角', studentCount: 1,
+      difficultyPatterns: [], commonIssues: [], dataQualityIssues: ['d1'],
+      keyVerificationTopics: [], interviewSuggestions: [],
+    }], 'sum-req-1');
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify({
+      version: '1.0',
+      schoolAnalysis: {
+        overview: '全校汇总结果', studentCount: 1,
+        difficultyPatterns: ['p'], commonIssues: [], dataQualityIssues: ['d1', 'd2'],
+        keyVerificationTopics: [], interviewSuggestions: [],
+      },
+    })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, usage } = await client.summarizeSchool(summaryPayload);
+    expect(result.schoolAnalysis.overview).toBe('全校汇总结果');
+    expect(result.schoolAnalysis.dataQualityIssues).toEqual(['d1', 'd2']);
+    expect(usage.apiCalls).toBe(1);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.messages[0].content).toContain('学校级归纳汇总');
+    expect(body.max_tokens).toBe(MAX_OUTPUT_TOKENS);
+    const wire = JSON.parse(body.messages[1].content);
+    expect(wire.requestId).toBe('sum-req-1');
+    expect(wire.batchCount).toBe(1);
+    expect(wire.batchAnalyses[0].dataQualityIssues).toEqual(['d1']);
+    expect(wire.students).toBeUndefined();
+  });
+
+  it('summarizeSchool：响应缺 schoolAnalysis → 按 zod 失败重试一次后报 format', async () => {
+    const summaryPayload = createSchoolSummaryPayload(request, [{
+      overview: '批 1 视角', studentCount: 1,
+      difficultyPatterns: [], commonIssues: [], dataQualityIssues: [],
+      keyVerificationTopics: [], interviewSuggestions: [],
+    }], 'sum-req-2');
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify({ version: '1.0' })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const err = await client.summarizeSchool(summaryPayload).catch((e: unknown) => e) as AnalysisClientError;
+    expect(err.category).toBe('format');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 第二次请求携带 zod 失败路径
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(second.messages[2].content).toContain('schoolAnalysis');
+  });
+
+  it('summarizeSchool：finish_reason=length → truncated（与 analyze 共用策略）', async () => {
+    const summaryPayload = createSchoolSummaryPayload(request, [], 'sum-req-3');
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('{"version":"1.0","schoolAnalysis":{"overview":"截', undefined, 'length'));
+    vi.stubGlobal('fetch', fetchMock);
+    const err = await client.summarizeSchool(summaryPayload).catch((e: unknown) => e) as AnalysisClientError;
+    expect(err.category).toBe('truncated');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('401/403/400/404 → configuration 类别，文案不含服务端错误原文', async () => {

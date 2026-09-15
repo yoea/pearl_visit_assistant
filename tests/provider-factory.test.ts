@@ -83,7 +83,8 @@ describe('createAnalysisService', () => {
     const service = createAnalysisService();
     const result = await service.analyze(request, new Set());
     expect(result.schoolAnalysis.studentCount).toBe(1);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // 1 次批次调用 + 1 次学校级归纳汇总调用
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('未知 provider 值 → 按 mock 处理（fail-safe 默认）', async () => {
@@ -123,7 +124,8 @@ describe('createAnalysisService', () => {
     vi.stubGlobal('fetch', fetchMock);
     const service = createAnalysisService();
     await service.analyze(request, new Set());
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // 1 次批次调用 + 1 次学校级归纳汇总调用
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('VITE_ANALYSIS_TIMEOUT_MS 非法值 → 默认 60s 且构造不抛；config.timeoutMs 合法值可正常传入', async () => {
