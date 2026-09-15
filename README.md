@@ -68,7 +68,10 @@ npm test           # 运行全部测试
 | `VITE_USAGE_REPORT_URL` | 使用统计上报接口（可选；未配置则完全不发送） | 空 |
 
 - `real` 但未配置 Key 时自动回退 Mock 并在控制台提示。
-- 可复制 `.env.example` 为 `.env` 按需修改（`.env*` 已被 gitignore，`.env.example` 除外）。
+- 可复制 `.env.example` 为 `.env` 按需修改（`.env*` 已被 gitignore，模板除外）。
+- **`VITE_USAGE_REPORT_URL` 不写在 `.env` 里**：它只在生产构建时需要，放在 `.env.production`
+  （`npm run build` 自动加载且优先于 `.env`）；否则 `npm run dev` 会把本机打开次数写进生产统计库。
+  模板见 `.env.production.example`。
 - 改动标题/副标题后需重新构建才生效。
 
 ### 使用统计上报（可选）

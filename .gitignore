@@ -5,10 +5,14 @@ dist/
 # 隐私红线：examples/ 存放真实学生数据 Excel，绝不进入版本库
 examples/
 
+# 本地跑 server/static-server.mjs 时产生的统计库本地副本（不入库）
+server/data/
+
 # 本地与临时文件
 .scratch/
 *.local
 .env
 .env.*
 !.env.example
+!.env.production.example
 .DS_Store

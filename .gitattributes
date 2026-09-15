@@ -1,0 +1,15 @@
+# 行尾符策略（跨平台协作 + Linux 部署必需）
+# ------------------------------------------------------------
+# 背景：Windows 上 git core.autocrlf=true 会把工作区文件写成 CRLF。
+# 部署脚本要 scp 到 Armbian 盒子执行，CRLF 会导致：
+#   /bin/sh^M: bad interpreter: No such file or directory
+# 因此 .sh 必须在工作区就是 LF，不能依赖提交时的规范化。
+
+# 部署/运维脚本：强制 LF（否则推到 Linux 盒子无法执行）
+*.sh text eol=lf
+
+# Windows 批处理：强制 CRLF（LF 的 .bat 在 cmd 下会出错）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 其余源文件交给 git 自动判定，不做强制
