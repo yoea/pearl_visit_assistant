@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DeepSeekAnalysisProvider } from '../src/analysis/deepseek-provider';
-import { AnalysisClient, DEEPSEEK_API_URL } from '../src/analysis/analysis-client';
+import { AnalysisClient, AnalysisClientError, DEEPSEEK_API_URL } from '../src/analysis/analysis-client';
 import { SecurityViolationError } from '../src/analysis/analysis-service';
 import type { AnalysisRequest, AnonymizedStudent } from '../src/types/student';
 
@@ -37,9 +37,13 @@ const wireResponse = (ids: string[]) => ({
   })),
 });
 
-/** DeepSeek 响应壳（直连模式）；usage 可选（缺省 = 无 usage 字段） */
-function deepseekResponse(content: string, usage?: Record<string, unknown>): Response {
-  const shell: Record<string, unknown> = { choices: [{ message: { content } }] };
+/** DeepSeek 响应壳（直连模式）；usage / finish_reason 可选（缺省 = 无该字段） */
+function deepseekResponse(
+  content: string, usage?: Record<string, unknown>, finishReason?: string,
+): Response {
+  const choice: Record<string, unknown> = { message: { content } };
+  if (finishReason !== undefined) choice.finish_reason = finishReason;
+  const shell: Record<string, unknown> = { choices: [choice] };
   if (usage !== undefined) shell.usage = usage;
   return {
     ok: true, status: 200,
@@ -243,5 +247,66 @@ describe('DeepSeekAnalysisProvider', () => {
     await expect(provider.analyze(request15)).rejects.toBeInstanceOf(SecurityViolationError);
     // 重扫②在分块前整体拦截，零网络
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('单批输出被截断（finish_reason=length）→ 自动拆半重试并合并：学生齐全、保持顺序', async () => {
+    const students4 = Array.from({ length: 4 }, (_, i) => ({
+      ...cleanStudent, anonymousId: `student-${String(i + 1).padStart(3, '0')}`,
+    }));
+    const request4: AnalysisRequest = { meta: request.meta, students: students4 };
+
+    // 整批（4 人）返回截断壳；拆半后（各 2 人）正常返回
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
+      const wire = JSON.parse(JSON.parse(init.body).messages[1].content);
+      const ids = wire.students.map((s: { id: string }) => s.id);
+      const truncated = ids.length > 2;
+      return Promise.resolve(deepseekResponse(
+        JSON.stringify(wireResponse(ids)),
+        { prompt_tokens: 100, completion_tokens: 50 },
+        truncated ? 'length' : 'stop',
+      ));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new DeepSeekAnalysisProvider(
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
+    );
+
+    const result = await provider.analyze(request4);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // 1 次整批（截断）+ 2 次半批
+    expect(result.students.map((s) => s.studentId)).toEqual(students4.map((s) => s.anonymousId));
+
+    // 拆批顺序：先试整批，失败后前 2 / 后 2
+    const sentIds = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse(JSON.parse((init as { body: string }).body).messages[1].content)
+        .students.map((s: { id: string }) => s.id));
+    expect(sentIds[0]).toEqual(students4.map((s) => s.anonymousId));
+    expect(sentIds[1]).toEqual(students4.slice(0, 2).map((s) => s.anonymousId));
+    expect(sentIds[2]).toEqual(students4.slice(2).map((s) => s.anonymousId));
+
+    // 被截断的那次调用不返回 usage（失败调用本就不上报用量），故只累计两次成功的分片
+    expect(result.usage).toEqual({ apiCalls: 2, promptTokens: 200, completionTokens: 100, cacheHitTokens: 0 });
+  });
+
+  it('拆到单名学生仍被截断 → 向上抛 truncated，不无限递归', async () => {
+    const two: AnalysisRequest = {
+      ...request,
+      students: [cleanStudent, { ...cleanStudent, anonymousId: 'student-002' }],
+    };
+    // 无论几人一律返回截断壳
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: { body: string }) => {
+      const wire = JSON.parse(JSON.parse(init.body).messages[1].content);
+      const ids = wire.students.map((s: { id: string }) => s.id);
+      return Promise.resolve(deepseekResponse(JSON.stringify(wireResponse(ids)), undefined, 'length'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new DeepSeekAnalysisProvider(
+      new AnalysisClient({ apiKey: 'sk-test', timeoutMs: 30_000 }),
+    );
+
+    const err = await provider.analyze(two).catch((e: unknown) => e) as AnalysisClientError;
+    expect(err).toBeInstanceOf(AnalysisClientError);
+    expect(err.category).toBe('truncated');
+    // 2 人整批截断 → 拆成 1+1 各一次 → 单人不再拆：共 3 次调用后收敛
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

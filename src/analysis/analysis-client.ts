@@ -7,7 +7,7 @@ import type { TokenUsage } from './provider';
 import type { ZodError } from 'zod';
 
 export type AnalysisErrorCategory =
-  | 'network' | 'timeout' | 'configuration' | 'rate-limited' | 'server' | 'format';
+  | 'network' | 'timeout' | 'configuration' | 'rate-limited' | 'server' | 'format' | 'truncated';
 
 /** 用户可见文案（绝不展示服务端错误原文）。SecurityViolationError 文案由 analysis-service 提供。 */
 export const CATEGORY_MESSAGES: Record<AnalysisErrorCategory, string> = {
@@ -17,6 +17,7 @@ export const CATEGORY_MESSAGES: Record<AnalysisErrorCategory, string> = {
   'rate-limited': '请求过于频繁，请稍候片刻再试。',
   server: '分析服务暂时不可用，请稍后重试。',
   format: '分析结果格式异常，请重试；若反复出现请联系系统管理员。',
+  truncated: '分析内容过长导致模型输出被截断，请减少单次上传的学生数后重试。',
 };
 
 export class AnalysisClientError extends Error {
@@ -34,6 +35,15 @@ export interface AnalysisClientConfig {
 }
 
 export const DEFAULT_TIMEOUT_MS = 60_000;
+/**
+ * 单次请求的输出 token 上限。上限本身不额外计费，只有模型真正生成的部分才计费。
+ *
+ * 历史：2026-08-25 定为 8000，当时单批输出约 4.7k，余量充足；
+ * 2026-09 起模型对同一批（10 人）学生的输出量上涨约 60% 至约 7.5k，
+ * 把 8000 撑满 → JSON 被截断 → 整份报告失败（线上实测失败率 44%）。
+ * 放宽到 32768 留出足够余量，并配合 finish_reason 截断检测 + 拆批重试兜底。
+ */
+export const MAX_OUTPUT_TOKENS = 32_768;
 export const DEFAULT_MODEL = 'deepseek-v4-flash';
 export const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 
@@ -58,6 +68,8 @@ const REPAIR_JSON_HINT = '你的上一轮输出无法解析为 JSON。请只输�
  * 职责：POST DeepSeek（直连，Authorization Bearer Key）→ 状态码分类
  * → choices[0].message.content 提取 → JSON 修复一次 → zod 校验；
  * 模型输出不合格（JSON 修复失败/结构校验失败）时带修正提示自动重试一次，两次失败才报 format。
+ * finish_reason=length（被输出上限截断）单独识别为 truncated 并立即抛出，不做修复重试
+ * ——原样重发同一批必然再次截断，由上层拆批重试处理。
  * 绝不输出任何日志、绝不读取调用方其他数据、绝不展示上游错误原文。
  */
 export class AnalysisClient {
@@ -89,8 +101,10 @@ export class AnalysisClient {
     }
   }
 
-  /** 单次请求：超时 → 状态码分类 → 响应壳提取。返回模型文本与该次调用 token 用量；异常一律按七分类抛出。 */
-  private async requestContent(messages: ChatMessage[]): Promise<{ content: string; usage: TokenUsage }> {
+  /** 单次请求：超时 → 状态码分类 → 响应壳提取。返回模型文本、finish_reason 与该次调用 token 用量；异常一律按分类抛出。 */
+  private async requestContent(
+    messages: ChatMessage[],
+  ): Promise<{ content: string; finishReason: string | undefined; usage: TokenUsage }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
     let response: Response;
@@ -106,10 +120,10 @@ export class AnalysisClient {
           model: this.config.model ?? DEFAULT_MODEL,
           messages,
           temperature: 0.3, // 走访分析：低随机度保证可追溯、不跑题
-          max_tokens: 8000,
+          max_tokens: MAX_OUTPUT_TOKENS,
           response_format: { type: 'json_object' },
-          // deepseek-v4-flash 为推理模型：默认思维链会耗尽 max_tokens 使 content 为空/截断
-          // （实测 reasoning≈7-8k 时 content=0 字符 → finish=length）。显式关闭推理。
+          // deepseek-flash 为推理模型：默认思维链会耗尽输出预算使 content 为空/截断
+          // （实测思维链≈7-8k 时 content=0 字符 → finish_reason=length）。显式关闭推理。
           thinking: { type: 'disabled' },
         }),
         signal: controller.signal,
@@ -134,13 +148,16 @@ export class AnalysisClient {
       throw new AnalysisClientError('network');
     }
 
-    // DeepSeek 响应壳：{ choices: [{ message: { content: <模型文本> } }], usage: { prompt_tokens, ... } }
+    // DeepSeek 响应壳：{ choices: [{ message: { content: <模型文本> }, finish_reason }], usage: { prompt_tokens, ... } }
     // usage 为计费依据（仅数字）；缺失时按 0 处理（绝不因统计失败影响主流程）
     let content: string;
+    let finishReason: string | undefined;
     let usage: TokenUsage = { apiCalls: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 };
     try {
       const shell = JSON.parse(text);
-      content = shell.choices?.[0]?.message?.content;
+      const choice = shell.choices?.[0];
+      content = choice?.message?.content;
+      finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : undefined;
       const u = shell.usage;
       if (u && typeof u === 'object') {
         usage = {
@@ -153,8 +170,11 @@ export class AnalysisClient {
     } catch {
       throw new AnalysisClientError('format');
     }
+    // 被输出上限截断：内容必然不完整，且原样重发同一批只会再次截断（修正提示不会让内容变短）
+    // → 立即按 truncated 抛出，交由上层拆批重试，不浪费一次注定失败的修复重试
+    if (finishReason === 'length') throw new AnalysisClientError('truncated');
     if (typeof content !== 'string' || !content) throw new AnalysisClientError('format');
-    return { content, usage };
+    return { content, finishReason, usage };
   }
 }
 

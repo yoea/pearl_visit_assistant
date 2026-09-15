@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   AnalysisClient, AnalysisClientError, CATEGORY_MESSAGES, DEFAULT_TIMEOUT_MS, DEEPSEEK_API_URL,
+  MAX_OUTPUT_TOKENS,
 } from '../src/analysis/analysis-client';
 import { createAnalysisPayload } from '../src/analysis/payload';
 import type { AnalysisRequest, AnonymizedStudent } from '../src/types/student';
@@ -40,9 +41,11 @@ const wireResponse = {
   }],
 };
 
-/** DeepSeek 响应壳：choices[0].message.content 为模型文本；usage 可选（缺省 = 无 usage 字段） */
-function okResponse(content: string, usage?: Record<string, unknown>): Response {
-  const shell: Record<string, unknown> = { choices: [{ message: { content } }] };
+/** DeepSeek 响应壳：choices[0].message.content 为模型文本；usage/finish_reason 可选（缺省 = 无该字段） */
+function okResponse(content: string, usage?: Record<string, unknown>, finishReason?: string): Response {
+  const choice: Record<string, unknown> = { message: { content } };
+  if (finishReason !== undefined) choice.finish_reason = finishReason;
+  const shell: Record<string, unknown> = { choices: [choice] };
   if (usage !== undefined) shell.usage = usage;
   return {
     ok: true, status: 200,
@@ -63,7 +66,7 @@ describe('AnalysisClient', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
   it('2xx 合法响应 → 解析成功；端点/方法/头/消息体正确', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(wireResponse)));
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(wireResponse), undefined, 'stop'));
     vi.stubGlobal('fetch', fetchMock);
     const { result } = await client.analyze(payload);
     expect(result.schoolAnalysis.studentCount).toBe(1);
@@ -75,11 +78,31 @@ describe('AnalysisClient', () => {
     expect(init.headers['Content-Type']).toBe('application/json');
     const body = JSON.parse(init.body);
     expect(body.model).toBe('deepseek-v4-flash');
+    expect(body.max_tokens).toBe(MAX_OUTPUT_TOKENS);
     expect(body.response_format).toEqual({ type: 'json_object' });
-    expect(body.thinking).toEqual({ type: 'disabled' }); // 推理模型：显式关闭思维链，防 max_tokens 被推理耗尽
+    expect(body.thinking).toEqual({ type: 'disabled' }); // 推理模型：显式关闭思维链，防输出预算被推理耗尽
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[0].content).toContain('不是资格审批器');
     expect(JSON.parse(body.messages[1].content).requestId).toBe('req-1');
+  });
+
+  it('finish_reason=length（输出被上限截断）→ truncated，且不做注定失败的修复重试', async () => {
+    // 截断产生的半截 JSON：即便内容看似可修复也不该再试——同一批原样重发必然再次截断
+    const truncated = '{"version":"1.0","schoolAnalysis":{"overview":"本校共 1 名';
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(truncated, undefined, 'length'));
+    vi.stubGlobal('fetch', fetchMock);
+    const err = await client.analyze(payload).catch((e: unknown) => e) as AnalysisClientError;
+    expect(err).toBeInstanceOf(AnalysisClientError);
+    expect(err.category).toBe('truncated');
+    expect(err.message).toBe(CATEGORY_MESSAGES.truncated);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // 不消耗修复重试
+  });
+
+  it('finish_reason 缺失（上游未返回该字段）→ 不误判为截断，按原有逻辑处理', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(wireResponse)));
+    vi.stubGlobal('fetch', fetchMock);
+    const { result } = await client.analyze(payload);
+    expect(result.students[0].studentId).toBe('student-001');
   });
 
   it('401/403/400/404 → configuration 类别，文案不含服务端错误原文', async () => {

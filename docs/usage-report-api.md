@@ -56,7 +56,7 @@ POST {VITE_USAGE_REPORT_URL}
     },
 
     // analysis_failed：
-    "errorCategory": "timeout",             // network | timeout | configuration | rate-limited | server | format | security | unknown
+    "errorCategory": "timeout",             // network | timeout | configuration | rate-limited | server | format | truncated | security | unknown
 
     // report_downloaded：
     "format": "markdown"                    // markdown | html（分开计数）
