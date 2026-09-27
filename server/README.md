@@ -9,18 +9,34 @@
 
 ---
 
-## 〇、现网事实速查（2026-09-15 实测）
+## 〇、现网事实速查（2026-09-15 实测，2026-09-27 复核）
 
 | 项目 | 值 |
 |---|---|
 | 盒子角色 | Armbian / aarch64，主机名 `x96max`，局域网 IP `172.16.0.146` |
-| SSH 入口（本机 `~/.ssh/config` 已配好） | 局域网 `ssh x96max`（ethan@x96max.local:9622）；外网 `ssh x96max-remote`（ethan@101.132.172.82:22296） |
+| SSH 入口 | 统一用别名 `ssh x96max`。别名背后的真实地址**因开发机而异**（局域网直连 / 公网转发端口不同，别名集合也可能不同）——本文档不写死地址，用前见下方「连接前先确认」 |
 | 部署目录 | `/home/ethan/pearl-visit/`（静态页在 `dist/`，服务在 `server/`） |
 | Node | `/home/ethan/.local/bin/node`，**v24.17.0**（`node` 不在 PATH，必须写全路径） |
 | 监听端口 | **80**（`PORT=80`）；代码默认值是 5000，部署时被显式覆盖 |
 | 服务进程 | `node static-server.mjs`，日志 `/home/ethan/pearl-visit/server.log` |
 | 统计库 | `/home/ethan/pearl-visit/server/data/usage.db`（SQLite） |
 | 盒子上**没有 git 仓库** | 靠文件拷贝部署，不是 `git pull` |
+
+### 连接前先确认（不同开发机配置不同）
+
+本机 `~/.ssh/config` 里 `x96max` 别名的真实地址**不固定**——有人用局域网直连、有人走公网端口转发，
+别名集合也可能不一样。所以：
+
+```bash
+ssh -G x96max | grep -E '^(hostname|port|user) '   # 看这台机器实际连到哪
+```
+
+- 只依赖别名 `ssh x96max`，**不要在文档/脚本里写死 IP 与端口**。
+- 连的是**哪种链路会影响「验证」这一步**：
+  - 走**局域网**（如 `172.16.x.x`）→ 本机可以直接 `curl http://172.16.0.146/` 做同事视角验证；
+  - 走**公网转发** → 本机 curl 内网 IP 会超时，这是**正常现象、不是部署失败**。
+    改用盒子本机视角验证（`ssh x96max "curl -s http://127.0.0.1/ ..."`），
+    想看页面就做端口转发：`ssh -N -L 18080:127.0.0.1:80 x96max` → `http://localhost:18080/`。
 
 ---
 
@@ -136,18 +152,30 @@ curl -sf -m 5 http://127.0.0.1/health && echo STARTED || echo FAILED
 ssh x96max "pgrep -af static-server.mjs"                        # 服务在跑吗（PID 变新 = 重启成功）
 ssh x96max "tail -30 /home/ethan/pearl-visit/server.log"        # 服务日志
 ssh x96max "curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/health"
-curl -s -o /dev/null -w '%{http_code}\n' http://172.16.0.146/   # 同事视角
+curl -s -o /dev/null -w '%{http_code}\n' http://172.16.0.146/   # 同事视角（仅当本机与盒子同网段）
 ```
 
 ---
 
 ## 五、验证
 
+**先看本机到盒子是哪条链路**（见第〇节「连接前先确认」）：走公网时内网 IP 不可达，
+用下面的 ② 会全部超时，属正常现象——改用 ① 在盒子本机验证即可。
+
 ```bash
+# ① 盒子本机视角（任何链路都可用，最可靠）
+ssh x96max "curl -s http://127.0.0.1/ | head -3 ; \
+             curl -s -o /dev/null -w 'health=%{http_code}\n' http://127.0.0.1/health ; \
+             curl -s http://127.0.0.1/stats | head -5"
+
+# ② 同事视角（仅本机与盒子同网段时可用）
 curl -s http://172.16.0.146/ | head -3                    # 应返回 index.html
 curl -s -o /dev/null -w '%{http_code}\n' http://172.16.0.146/health   # 200
 # 统计页（打开次数/分析数/token 总量/每日趋势）
 curl -s http://172.16.0.146/stats | head -5
+
+# ③ 走公网链路时想在浏览器里看线上页面 → 端口转发
+ssh -N -L 18080:127.0.0.1:80 x96max     # 然后访问 http://localhost:18080/
 ```
 
 本机开发环境自测（不碰生产）：

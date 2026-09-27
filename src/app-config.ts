@@ -10,7 +10,7 @@ export const APP_SUBTITLE = (import.meta.env.VITE_APP_SUBTITLE as string | undef
   || '只需上传珍珠生申请表，即可分析学生资料填写问题并提取重点信息，帮您快速审核、面谈。';
 
 /** 版本标签：与 git tag / package.json version 保持同步 */
-export const APP_VERSION = 'v2.0.0';
+export const APP_VERSION = 'v2.1.0';
 
 /**
  * 构建时间（页脚展示）：由 vite.config.ts 的 define 在构建期注入并被字面量替换，

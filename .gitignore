@@ -8,6 +8,10 @@ examples/
 # 本地跑 server/static-server.mjs 时产生的统计库本地副本（不入库）
 server/data/
 
+# AI 助手的工作目录（会话记忆、本地 skill 等，因人/因机而异，不入库）
+# 项目约定请写进根目录 CODEBUDDY.md（该文件入库）
+.workbuddy/
+
 # 本地与临时文件
 .scratch/
 *.local
