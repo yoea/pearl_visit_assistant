@@ -14,3 +14,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/**
+ * 构建时间字符串（北京时间，如 "2026/09/27 13:50"）。
+ * 由 vite.config.ts 的 define 在构建期注入，见 src/app-config.ts 的 APP_BUILD_TIME。
+ */
+declare const __BUILD_TIME__: string;

@@ -17,7 +17,7 @@ import { saveReport, loadReport, deleteReport } from './stats/report-store';
 import {
   reportOpen, reportFileUploaded, reportAnalysisSucceeded, reportAnalysisFailed, usageStatsUrl,
 } from './stats/usage-reporter';
-import { APP_TITLE, APP_VERSION } from './app-config';
+import { APP_TITLE, APP_VERSION, APP_BUILD_TIME } from './app-config';
 import type { TokenUsage } from './analysis/provider';
 import type { MappedColumn, RawStudentRecord } from './types/student';
 import type { ParsedState, Stage } from './types/pipeline';
@@ -390,6 +390,11 @@ export default function App() {
           </nav>
           <p className="mt-2 text-center text-xs text-slate-400">
             Copyright © 新华教育基金会 All Rights Reserved.
+            {/* 版本与构建时间：同事反馈问题时用于确认页面对应哪次部署 */}
+            <span className="ml-2 text-slate-300" title="页面版本与构建时间">
+              {APP_VERSION}
+              {APP_BUILD_TIME && ` · 构建于 ${APP_BUILD_TIME}`}
+            </span>
             {/* 不明显的使用统计入口：仅配置了上报接口时显示 */}
             {usageStatsUrl() && (
               <a
