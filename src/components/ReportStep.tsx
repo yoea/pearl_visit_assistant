@@ -12,6 +12,7 @@ import { APP_VERSION } from '../app-config';
 import { reportReportDownloaded, reportStudentSearch } from '../stats/usage-reporter';
 import { countReviewStatuses, reviewStatusTone, REVIEW_STATUS_COLORS } from '../report/review-status';
 import { countDifficultyReasons } from '../report/difficulty-reason';
+import { countStudentImportance } from '../report/importance-distribution';
 import { decorateStudentIds } from '../report/name-tag';
 import { exportIssuesCsv } from '../report/issue-csv';
 import Card from './ui/Card';
@@ -350,15 +351,11 @@ export default function ReportStep({
 
   // 困难原因分布（多选拆分统计，学校整体情况饼图用）
   const reasonItems = useMemo(() => countDifficultyReasons(report.studentsData), [report.studentsData]);
-  const factorChart = useMemo(() => {
-    const counts: Record<string, number> = { high: 0, medium: 0, low: 0 };
-    for (const g of report.students) {
-      for (const f of g.mainDifficultyFactors) counts[f.importance] = (counts[f.importance] ?? 0) + 1;
-    }
-    return ([['high', '高'], ['medium', '中'], ['low', '低']] as const)
-      .map(([key, label]) => ({ label, count: counts[key] ?? 0 }))
-      .filter((i) => i.count > 0);
-  }, [report.students]);
+  // 困难因素重要性分布：按**学生**计数，每名学生只归入其最高重要性那一档。
+  // （早期版本遍历 mainDifficultyFactors 逐条累加，统计出的是因素条数却标注「X 人」，
+  //   47 名学生能显示成 130 人；现各档之和恒等于已归类学生数。）
+  const importance = useMemo(() => countStudentImportance(report.students), [report.students]);
+  const factorChart = importance.items;
 
   return (
     <div className="space-y-4">
@@ -543,6 +540,11 @@ export default function ReportStep({
               <div>
                 <p className="text-xs font-medium text-slate-500">困难因素重要性分布</p>
                 <div className="mt-2"><MiniBarChart items={factorChart} color="bg-amber-400" /></div>
+                {/* 口径说明：各档之和 = 已归类学生数，不会超过分析人数 */}
+                <p className="mt-2 text-xs text-slate-400">
+                  每名学生按其最高重要性因素归入一档，共 {importance.counted} 人
+                  {importance.withoutFactors > 0 && `（另有 ${importance.withoutFactors} 人材料未体现困难因素）`}
+                </p>
               </div>
             )}
           </div>

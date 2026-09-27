@@ -4,6 +4,7 @@ import { reportToMarkdown } from '../src/report/markdown';
 import { reportToHtml, escapeHtml } from '../src/report/html';
 import { MockAnalysisProvider } from '../src/analysis/mock-provider';
 import type { AnonymizedStudent, AnalysisRequest } from '../src/types/student';
+import type { Importance, StudentAnalysis } from '../src/analysis/provider';
 import type { Report } from '../src/report/types';
 
 const sampleStudent: AnonymizedStudent = {
@@ -243,6 +244,42 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     const html = reportToHtml(generateReport(result, meta, now, [bad]));
     expect(html).toContain('105kg <span class="badge-warn">疑似填写错误待核实</span>');
     expect(html).toContain('>1 <span class="badge-warn">疑似填写错误待核实</span>');
+  });
+
+  it('回归：困难因素重要性分布按学生计数，各档之和不超过分析人数', () => {
+    // 3 名学生共 7 个困难因素 → 旧实现按因素条数累加会显示「高 3 / 中 3 / 低 1」共 7 人
+    const mk = (id: string, importances: Importance[]): StudentAnalysis => ({
+      studentId: id, summary: '', familySituation: '',
+      mainDifficultyFactors: importances.map((importance, i) => ({ factor: `因素${i}`, evidence: '材料原文', importance })),
+      informationToVerify: [], interviewQuestions: [], interviewNotes: [],
+    });
+    const students = [
+      mk('s1', ['high', 'medium']),               // → 高
+      mk('s2', ['medium', 'low', 'high']),        // → 高
+      mk('s3', ['medium', 'low']),                // → 中
+    ];
+    const report: Report = {
+      title: '走访参考报告', schoolName: '某中学', cohort: '2026级', generatedAt: '2026-09-27 13:00',
+      schoolAnalysis: {
+        overview: '概览', studentCount: 3, difficultyPatterns: [], commonIssues: [],
+        dataQualityIssues: [], keyVerificationTopics: [], interviewSuggestions: [],
+      },
+      students,
+      studentsData: students.map((s) => ({ ...sampleStudent, anonymousId: s.studentId })),
+    };
+
+    const html = reportToHtml(report);
+    // 截取「困难因素重要性分布」所在区块（到下一个 h3 为止）
+    const start = html.indexOf('困难因素重要性分布');
+    expect(start).toBeGreaterThan(-1);
+    const section = html.slice(start, html.indexOf('<h3', start));
+    const counts = [...section.matchAll(/bar-count">(\d+) 人/g)].map((m) => Number(m[1]));
+
+    expect(counts).toEqual([2, 1]); // 高 2 人、中 1 人（不是 3/3/1）
+    const total = counts.reduce((a, b) => a + b, 0);
+    expect(total).toBe(report.students.length); // 各档之和 = 分析人数
+    expect(total).toBeLessThanOrEqual(report.students.length);
+    expect(section).toContain('共 3 人'); // 口径说明
   });
 
   it('escapeHtml 转义动态文本（防止内容破坏 HTML 结构）', () => {

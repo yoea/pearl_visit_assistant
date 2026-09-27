@@ -94,6 +94,47 @@ const renderStep = (props: Record<string, unknown> = {}) =>
 describe('ReportStep（本地查找 + 模态框 + 成功动画）', () => {
   afterEach(() => { cleanup(); vi.useRealTimers(); });
 
+  it('回归：困难因素重要性分布按学生计数（各档之和 = 分析人数，非因素条数）', () => {
+    // 3 名学生共 6 个因素 → 旧实现按因素条数会显示「高 1 / 中 2 / 低 2」共 5 人（甚至更多）
+    const multi: Report = {
+      ...report,
+      students: [
+        {
+          ...report.students[0],
+          mainDifficultyFactors: [
+            { factor: 'a', evidence: 'e', importance: 'high' },
+            { factor: 'b', evidence: 'e', importance: 'medium' },
+          ],
+        },
+        {
+          ...report.students[1],
+          mainDifficultyFactors: [
+            { factor: 'c', evidence: 'e', importance: 'medium' },
+            { factor: 'd', evidence: 'e', importance: 'low' },
+          ],
+        },
+        {
+          ...report.students[2],
+          mainDifficultyFactors: [
+            { factor: 'e', evidence: 'e', importance: 'low' },
+            { factor: 'f', evidence: 'e', importance: 'high' },
+          ],
+        },
+      ],
+    };
+    renderStep({ report: multi });
+
+    // 每生归入最高档：s1→高、s2→中、s3→高 ⇒ 高 2 人 / 中 1 人
+    const title = screen.getByText('困难因素重要性分布');
+    const box = title.parentElement as HTMLElement;
+    expect(box.textContent).toContain('高');
+    expect(box.textContent).toContain('2 人');
+    expect(box.textContent).toContain('1 人');
+    expect(box.textContent).not.toContain('低'); // 无学生归入「低」档，该档不渲染
+    expect(box.textContent).toContain('每名学生按其最高重要性因素归入一档，共 3 人');
+    expect(box.textContent).not.toContain('5 人'); // 旧口径（因素条数合计）会显示 5 人
+  });
+
   it('输入姓名实时下拉显示所有匹配（输入「王」→ 王小明 + 李王，张三不出现）', () => {
     renderStep();
     const input = screen.getByPlaceholderText(/输入学生姓名的一部分/);

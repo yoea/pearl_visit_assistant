@@ -5,6 +5,7 @@ import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
 import { checkNumericIssues } from '../anonymization/numeric-validation';
 import { countReviewStatuses } from './review-status';
 import { countDifficultyReasons } from './difficulty-reason';
+import { countStudentImportance, IMPORTANCE_LABEL } from './importance-distribution';
 import { decorateStudentIds } from './name-tag';
 import { REVIEW_STATUS_COLORS } from './review-status';
 
@@ -58,7 +59,6 @@ function listItems(items: string[], empty: string, tone = ''): string {
 const IMPORTANCE_TONE: Record<string, string> = {
   high: 'tag-high', medium: 'tag-mid', low: 'tag-low',
 };
-const IMPORTANCE_LABEL: Record<string, string> = { high: '高', medium: '中', low: '低' };
 
 export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, string>): string {
   const sa = report.schoolAnalysis;
@@ -75,15 +75,10 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   const levelChart = [...levelCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([label, count]) => ({ label, count }));
-  const importanceCounts = { high: 0, medium: 0, low: 0 } as Record<string, number>;
-  for (const g of students) {
-    for (const f of g.mainDifficultyFactors) {
-      importanceCounts[f.importance] = (importanceCounts[f.importance] ?? 0) + 1;
-    }
-  }
-  const factorChart = [['high', '高'], ['medium', '中'], ['low', '低']]
-    .map(([key, label]) => ({ label, count: importanceCounts[key] ?? 0 }))
-    .filter((i) => i.count > 0);
+  // 因素重要性：按**学生**计数（每名学生只归入其最高重要性那一档），
+  // 不再逐条累加因素条数——否则 47 名学生能统计出 130「人」。
+  const importance = countStudentImportance(students);
+  const factorChart = importance.items;
 
   const studentSections = students.map((g) => {
     const display = nameIndex?.get(g.studentId) ?? g.studentId;
@@ -153,6 +148,7 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   li { margin: 2px 0; }
   li.warn { color: #b45309; }
   .empty { color: #94a3b8; font-size: 12px; }
+  .hint { color: #94a3b8; font-size: 12px; margin: 4px 0 0; }
   table.info { border-collapse: collapse; width: 100%; font-size: 12px; }
   table.info td { border: 1px solid #e2e8f0; padding: 4px 8px; }
   table.info td:first-child { background: #f8fafc; color: #64748b; white-space: nowrap; }
@@ -285,7 +281,9 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     })()}
     <h3>困难类型分布</h3>
     ${levelChart.length > 0 ? cssBarChart(levelChart) : '<p class="empty">材料中未填写困难度，无法统计。</p>'}
-    ${factorChart.length > 0 ? `<h3>困难因素重要性分布</h3>${cssBarChart(factorChart)}` : ''}
+    ${factorChart.length > 0
+      ? `<h3>困难因素重要性分布</h3>${cssBarChart(factorChart)}<p class="hint">每名学生按其最高重要性因素归入一档，共 ${importance.counted} 人${importance.withoutFactors > 0 ? `（另有 ${importance.withoutFactors} 人材料未体现困难因素）` : ''}</p>`
+      : ''}
     ${sa.difficultyPatterns.length > 0
       ? `<h3>AI 归纳的困难类型</h3><p class="tags">${sa.difficultyPatterns.map((p) =>
         `<span class="tag tag-low">${escapeHtml(p)}</span>`).join('')}</p>`
