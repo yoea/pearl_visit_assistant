@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, rmSync } from 'node:fs';
 import {
-  sanitize, appendUsage, loadRecords, summarize, setDbPath, closeDb,
+  sanitize, appendUsage, loadRecords, summarize, setDbPath, closeDb, statsHtml,
 } from '../server/usage-core.mjs';
 
 const validBody = {
@@ -138,5 +138,60 @@ describe('usage-core（SQLite 白名单存储 + 汇总）', () => {
     expect(s.succeeded).toBe(0);
     expect(s.totalTokens).toBe(0);
     expect(s.uniqueClients).toBe(0);
+  });
+});
+
+describe('statsHtml（/stats 页面渲染）', () => {
+  const s = summarize([]);
+  // 造一份有数据的场景
+  const sFull = summarize([
+    { tool: 'x', version: 'v1', clientId: 'a', event: 'open', occurredAt: '2026-08-27T09:00:00Z', payload: {} },
+    { tool: 'x', version: 'v1', clientId: 'b', event: 'file_uploaded', occurredAt: '2026-08-27T10:00:00Z', payload: { students: 47 } },
+    { tool: 'x', version: 'v1', clientId: 'b', event: 'analysis_succeeded', occurredAt: '2026-08-28T10:00:00Z', payload: { students: 47, usage: { promptTokens: 1200, completionTokens: 800, cacheHitTokens: 100 } } },
+    { tool: 'x', version: 'v1', clientId: 'c', event: 'analysis_failed', occurredAt: '2026-08-28T11:00:00Z', payload: { errorCategory: 'timeout' } },
+    { tool: 'x', version: 'v1', clientId: 'c', event: 'report_downloaded', occurredAt: '2026-08-29T11:00:00Z', payload: { format: 'html' } },
+    { tool: 'x', version: 'v1', clientId: 'd', event: 'student_search', occurredAt: '2026-08-29T12:00:00Z', payload: {} },
+  ]);
+
+  it('已移除「使用人数（按浏览器）」与「学生搜索次数」两张卡', () => {
+    const html = statsHtml(sFull);
+    expect(html).not.toContain('使用人数');
+    expect(html).not.toContain('按浏览器');
+    expect(html).not.toContain('学生搜索次数');
+  });
+
+  it('保留的 9 项指标全部渲染出实际数值', () => {
+    const html = statsHtml(sFull);
+    expect(html).toContain('工具打开次数');
+    expect(html).toContain('上传表格数');
+    expect(html).toContain('分析报告数');
+    expect(html).toContain('分析失败次数');
+    expect(html).toContain('累计分析学生数');
+    expect(html).toContain('token 总量');
+    expect(html).toContain('Markdown 下载');
+    expect(html).toContain('HTML 下载');
+    expect(html).toContain('PDF 下载');
+    expect(sFull.totalStudents).toBe(47);
+    expect(sFull.totalTokens).toBe(2000);
+    // data-count 携带真实数值（供页面滚动动画使用）
+    expect(html).toContain('data-count="47"');
+    expect(html).toContain('data-count="2000"');
+  });
+
+  it('渲染 SVG 图表与 3D 效果容器（不依赖任何外部资源）', () => {
+    const html = statsHtml(sFull);
+    expect(html).toContain('<svg class="chart trend"');   // 趋势面积图
+    expect(html).toContain('<svg class="chart iso"');      // 3D 立方柱
+    expect(html).toContain('class="scene"');               // 3D perspective 容器
+    expect(html).toContain('preserve-3d');
+    expect(html).toContain('使用漏斗');
+    // 零外部资源：不得出现任何外链 href/src
+    expect(html).not.toMatch(/<(script|link)[^>]+(src|href)=/i);
+  });
+
+  it('趋势图输入为空时不崩溃（降级为提示文案）', () => {
+    const html = statsHtml(s);
+    expect(html).toContain('暂无数据');
+    expect(html).toContain('<svg class="chart iso"');
   });
 });

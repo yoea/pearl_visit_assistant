@@ -62,7 +62,7 @@
 npm install
 npm run dev        # Vite 开发服务器（默认 5173）
 npm run build      # tsc --noEmit && vite build  → dist/（构建期注入 .env / .env.production）
-npm test           # vitest run（当前 30 个文件 / 310 个用例，应全绿）
+npm test           # vitest run（当前 31 个文件 / 322 个用例，应全绿）
 npx tsc --noEmit   # 单独类型检查
 npx vitest run tests/xxx.test.ts   # 单文件测试
 
@@ -70,7 +70,7 @@ node scripts/generate-sample-xlsx.mjs   # 生成虚构示例数据到 examples/
 PORT=8080 node server/static-server.mjs # 本地起静态服务（默认端口 5000，静态目录 ../dist）
 ```
 
-当前基线：`tsc` 零错误、310 个用例全绿、`npm run build` 通过（2026-09-27 实测）。
+当前基线：`tsc` 零错误、322 个用例全绿、`npm run build` 通过（2026-10-10 实测）。
 
 ---
 
@@ -146,6 +146,11 @@ PORT=8080 node server/static-server.mjs # 本地起静态服务（默认端口 5
 npm run build
 scp -r dist/* x96max:/home/ethan/pearl-visit/dist/   # 只换 dist 不需要重启服务
 ```
+
+- **`/stats` 统计页**的唯一来源是 `server/usage-core.mjs` 的 `statsHtml()`：**单文件内联 HTML + CSS + SVG，
+  零外部资源**（内网离线可用，不要引入 CDN 依赖）。改动 here 后必须**把 `server/` 一起 scp** 上去
+  （平时只传 `dist/`，默认流程会漏掉 server 侧改动）。
+  数据口径由 `summarize()` 产出并被 `tests/usage-core.test.ts` 钉死，展示层改版不要动它。
 
 - 环境变量分两文件：`.env`（dev + build 都加载）/ `.env.production`（仅 build，优先级更高，只放 `VITE_USAGE_REPORT_URL`）。
   真实文件均已 gitignore，模板是 `.env.example` / `.env.production.example`。**改动后必须重新构建才生效。**
