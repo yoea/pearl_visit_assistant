@@ -180,7 +180,7 @@ describe('ReportStep（本地查找 + 模态框 + 成功动画）', () => {
   });
 
   /** 模态框标题文本（姓名 + 匿名编号），用于确认打开的是哪一个学生 */
-  const modalTitle = () => screen.getByLabelText('关闭').parentElement?.textContent ?? '';
+  const modalTitle = () => screen.getByRole('dialog').textContent ?? '';
   const searchInput = () => screen.getByPlaceholderText(/输入学生姓名的一部分/) as HTMLInputElement;
   const typeQuery = (v: string) => fireEvent.change(searchInput(), { target: { value: v } });
   const options = () => screen.getAllByRole('option');
@@ -232,6 +232,33 @@ describe('ReportStep（本地查找 + 模态框 + 成功动画）', () => {
     fireEvent.keyDown(searchInput(), { key: 'ArrowDown' });
     fireEvent.keyDown(searchInput(), { key: 'Enter' });
     expect(screen.queryByLabelText('关闭')).toBeNull(); // 弹窗未打开
+  });
+
+  it('Esc 关闭学生信息弹窗：关闭后焦点回到查找框，且不清空搜索词', () => {
+    renderStep();
+    typeQuery('王');
+    fireEvent.keyDown(searchInput(), { key: 'Enter' });
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    // 焦点已移入弹窗（否则 Esc 落到输入框、被当成「清空搜索词」处理）
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // 搜索词保留：关掉弹窗下拉还在，可以继续 ↓ 看下一个人
+    expect(searchInput().value).toBe('王');
+    // 键盘连贯性关键：焦点还回查找框，不用重新去点一下输入框
+    expect(document.activeElement).toBe(searchInput());
+  });
+
+  it('弹窗打开时 Tab 焦点锁在弹窗内（不会跳到背后的报告内容）', () => {
+    renderStep();
+    typeQuery('王');
+    fireEvent.keyDown(searchInput(), { key: 'Enter' });
+    const panel = screen.getByRole('dialog');
+
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(panel.contains(document.activeElement)).toBe(true);
   });
 
   it('分析完成庆祝动画：非存档视图显示「分析完成！」浮层，数秒后自动消失', async () => {

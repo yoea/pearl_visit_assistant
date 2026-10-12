@@ -251,6 +251,8 @@ export default function ReportStep({
   // 查找下拉的键盘高亮项（输入即默认选中第一项；↑↓ 切换，Enter 打开）
   const [activeIndex, setActiveIndex] = useState(0);
   const activeItemRef = useRef<HTMLButtonElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const modalPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (archived) return;
@@ -307,6 +309,49 @@ export default function ReportStep({
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
   }, [active]);
 
+  /**
+   * 学生信息弹窗的键盘闭环：打开即接管焦点，Esc 关闭，Tab 在弹窗内循环，
+   * 关闭后焦点还回查找框——否则键盘用户关完弹窗就失去落点，流程被打断。
+   */
+  useEffect(() => {
+    if (!modalId) return;
+    // 打开时把焦点移进弹窗（面板本身可聚焦，避免一按 Enter 就误触关闭按钮）
+    modalPanelRef.current?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setModalId(null);
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      // 焦点陷阱：Tab / Shift+Tab 在弹窗内循环，不会跑到背后的报告内容
+      const panel = modalPanelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+        // 只按 disabled 过滤：jsdom 无布局、offsetParent 恒为 null，用它判断可见会让陷阱在测试里失效
+      ).filter((el) => !el.hasAttribute('disabled'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const cur = document.activeElement;
+      if (!e.shiftKey && (cur === last || cur === panel)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && (cur === first || cur === panel)) {
+        e.preventDefault();
+        last.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      // 弹窗关闭（或组件卸载）后焦点还回查找框，键盘操作可继续
+      searchInputRef.current?.focus();
+    };
+  }, [modalId]);
+
   /** 查找框键盘操作：↑↓ 切换高亮项，Enter 打开该生弹窗，Esc 清空输入 */
   const handleSearchKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -323,7 +368,11 @@ export default function ReportStep({
       }
       return;
     }
-    if (e.key === 'Escape' && query !== '') {
+    if (e.key === 'Escape') {
+      // 弹窗打开时 Esc 归弹窗（由 document 监听关闭），此处不抢，也不清空搜索词——
+      // 关完弹窗下拉还在，可以继续 ↓ 选下一个学生
+      if (modalId) return;
+      if (query === '') return;
       e.preventDefault();
       setQuery('');
       setActiveIndex(0);
@@ -528,6 +577,7 @@ export default function ReportStep({
             <div className="relative mt-1">
               <div className="flex items-center gap-2">
                 <input
+                  ref={searchInputRef}
                   type="text"
                   value={query}
                   onChange={(e) => handleSearchChange(e.target.value)}
@@ -809,7 +859,12 @@ export default function ReportStep({
           onClick={() => setModalId(null)}
         >
           <div
-            className="animate-pop-in max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white shadow-2xl"
+            ref={modalPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="学生信息"
+            tabIndex={-1}
+            className="animate-pop-in max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white shadow-2xl outline-none"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
@@ -821,14 +876,17 @@ export default function ReportStep({
                   return rs ? <Badge tone={reviewStatusTone(rs)}>{rs}</Badge> : null;
                 })()}
               </p>
-              <button
-                type="button"
-                onClick={() => setModalId(null)}
-                aria-label="关闭"
-                className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              >
-                ✕
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="hidden text-xs text-slate-400 sm:inline">Esc 关闭</span>
+                <button
+                  type="button"
+                  onClick={() => setModalId(null)}
+                  aria-label="关闭"
+                  className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <StudentSection
               g={report.students.find((s) => s.studentId === modalId)!}
