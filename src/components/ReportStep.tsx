@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Report } from '../report/types';
 import type { StudentAnalysis, TokenUsage } from '../analysis/provider';
 import type { CumulativeTokenUsage } from '../stats/token-usage-store';
@@ -247,6 +248,9 @@ export default function ReportStep({
   const [celebrate, setCelebrate] = useState<'show' | 'leaving' | 'hidden'>(archived ? 'hidden' : 'show');
   // 本地查找的学生信息模态框（studentId）
   const [modalId, setModalId] = useState<string | null>(null);
+  // 查找下拉的键盘高亮项（输入即默认选中第一项；↑↓ 切换，Enter 打开）
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeItemRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (archived) return;
@@ -292,6 +296,45 @@ export default function ReportStep({
     () => new Map(report.studentsData.map((s) => [s.anonymousId, s] as const)),
     [report.studentsData],
   );
+
+  // 键盘高亮项：匹配数随输入变化，越界时收敛到末项（不要直接拿 activeIndex 取数组）
+  const active = matches.length === 0 ? -1 : Math.min(activeIndex, matches.length - 1);
+
+  // 高亮项跟随键盘滚动到可见区域（下拉最多 10 条、超出滚动）
+  useEffect(() => {
+    const el = activeItemRef.current;
+    // jsdom 未实现 scrollIntoView，防御式调用避免测试环境报错
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+  }, [active]);
+
+  /** 查找框键盘操作：↑↓ 切换高亮项，Enter 打开该生弹窗，Esc 清空输入 */
+  const handleSearchKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (matches.length === 0) return;
+      e.preventDefault();
+      const delta = e.key === 'ArrowDown' ? 1 : -1;
+      setActiveIndex((i) => (Math.min(i, matches.length - 1) + delta + matches.length) % matches.length);
+      return;
+    }
+    if (e.key === 'Enter') {
+      if (active >= 0) {
+        e.preventDefault();
+        openStudent(matches[active].id);
+      }
+      return;
+    }
+    if (e.key === 'Escape' && query !== '') {
+      e.preventDefault();
+      setQuery('');
+      setActiveIndex(0);
+    }
+  };
+
+  /** 输入变化：重置高亮到第一项（默认选中第一项） */
+  const handleSearchChange = (value: string) => {
+    setQuery(value);
+    setActiveIndex(0);
+  };
 
   const download = () => {
     const md = reportToMarkdown(report, nameIndex);
@@ -487,14 +530,20 @@ export default function ReportStep({
                 <input
                   type="text"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={query.trim() !== ''}
+                  aria-controls="student-search-listbox"
+                  aria-activedescendant={active >= 0 ? 'student-search-opt-' + matches[active].id : undefined}
                   placeholder="输入学生姓名的一部分…"
                   className="w-56 shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
                 />
                 <button
                   type="button"
                   disabled={matches.length === 0}
-                  onClick={() => openStudent(matches[0]?.id ?? null)}
+                  onClick={() => openStudent(active >= 0 ? matches[active].id : null)}
                   className="shrink-0 rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
                 >
                   查看
@@ -502,23 +551,43 @@ export default function ReportStep({
               </div>
               {/* 实时下拉搜索结果（输入即显示，匹配姓名以列表形式展示） */}
               {query.trim() !== '' && (
-                <ul role="listbox" className="animate-slide-down absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
-                  {matches.length === 0 && (
-                    <li className="px-3 py-2 text-xs text-slate-400">未找到匹配的学生</li>
+                <>
+                  <ul
+                    id="student-search-listbox"
+                    role="listbox"
+                    aria-label="匹配的学生"
+                    className="animate-slide-down absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg"
+                  >
+                    {matches.length === 0 && (
+                      <li className="px-3 py-2 text-xs text-slate-400">未找到匹配的学生</li>
+                    )}
+                    {matches.map((m, i) => (
+                      <li key={m.id} role="option" aria-selected={i === active}>
+                        <button
+                          type="button"
+                          id={'student-search-opt-' + m.id}
+                          ref={i === active ? activeItemRef : null}
+                          onClick={() => openStudent(m.id)}
+                          onMouseEnter={() => setActiveIndex(i)}
+                          className={[
+                            'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors',
+                            i === active
+                              ? 'bg-emerald-100 text-emerald-900'
+                              : 'text-slate-700 hover:bg-emerald-50',
+                          ].join(' ')}
+                        >
+                          <span>{m.name}</span>
+                          <span className="ml-2 shrink-0 text-xs text-slate-400">{m.id}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {matches.length > 0 && (
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      ↑↓ 切换 · Enter 打开 · Esc 清空（默认选中第一项）
+                    </p>
                   )}
-                  {matches.map((m) => (
-                    <li key={m.id}>
-                      <button
-                        type="button"
-                        onClick={() => openStudent(m.id)}
-                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-emerald-50"
-                      >
-                        <span>{m.name}</span>
-                        <span className="text-xs text-slate-400">{m.id}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                </>
               )}
             </div>
           </div>

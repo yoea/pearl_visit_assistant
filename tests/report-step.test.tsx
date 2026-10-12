@@ -179,6 +179,61 @@ describe('ReportStep（本地查找 + 模态框 + 成功动画）', () => {
     expect(screen.getByText('材料要点摘要')).toBeTruthy();
   });
 
+  /** 模态框标题文本（姓名 + 匿名编号），用于确认打开的是哪一个学生 */
+  const modalTitle = () => screen.getByLabelText('关闭').parentElement?.textContent ?? '';
+  const searchInput = () => screen.getByPlaceholderText(/输入学生姓名的一部分/) as HTMLInputElement;
+  const typeQuery = (v: string) => fireEvent.change(searchInput(), { target: { value: v } });
+  const options = () => screen.getAllByRole('option');
+  const selectedIndex = () =>
+    options().findIndex((o) => o.getAttribute('aria-selected') === 'true');
+
+  it('输入后默认选中第一项（aria-selected 落在首条）', () => {
+    renderStep();
+    typeQuery('王');
+    expect(options()).toHaveLength(2); // 王小明 + 李王
+    expect(selectedIndex()).toBe(0);
+  });
+
+  it('↑↓ 切换高亮项并循环；「查看」按钮跟随高亮项', () => {
+    renderStep();
+    typeQuery('王');
+    fireEvent.keyDown(searchInput(), { key: 'ArrowDown' });
+    expect(selectedIndex()).toBe(1);
+    fireEvent.keyDown(searchInput(), { key: 'ArrowDown' }); // 末项之后循环回首项
+    expect(selectedIndex()).toBe(0);
+    fireEvent.keyDown(searchInput(), { key: 'ArrowUp' }); // 首项之前循环到末项
+    expect(selectedIndex()).toBe(1);
+
+    // 「查看」打开的是当前高亮项（李王 / student-002），不再固定第一项
+    fireEvent.click(screen.getByRole('button', { name: '查看' }));
+    expect(modalTitle()).toContain('student-002');
+  });
+
+  it('Enter 打开高亮项弹窗：默认第一项，↓ 后为第二项', () => {
+    renderStep();
+    typeQuery('王');
+    fireEvent.keyDown(searchInput(), { key: 'Enter' });
+    expect(modalTitle()).toContain('student-001'); // 王小明
+
+    fireEvent.click(screen.getByLabelText('关闭'));
+    fireEvent.keyDown(searchInput(), { key: 'ArrowDown' });
+    fireEvent.keyDown(searchInput(), { key: 'Enter' });
+    expect(modalTitle()).toContain('student-002'); // 李王
+  });
+
+  it('Esc 清空输入并收起下拉；无匹配时 ↑↓/Enter 不报错也不打开弹窗', () => {
+    renderStep();
+    typeQuery('王');
+    fireEvent.keyDown(searchInput(), { key: 'Escape' });
+    expect(searchInput().value).toBe('');
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    typeQuery('不存在');
+    fireEvent.keyDown(searchInput(), { key: 'ArrowDown' });
+    fireEvent.keyDown(searchInput(), { key: 'Enter' });
+    expect(screen.queryByLabelText('关闭')).toBeNull(); // 弹窗未打开
+  });
+
   it('分析完成庆祝动画：非存档视图显示「分析完成！」浮层，数秒后自动消失', async () => {
     vi.useFakeTimers();
     renderStep();

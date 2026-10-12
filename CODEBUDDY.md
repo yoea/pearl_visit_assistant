@@ -62,7 +62,7 @@
 npm install
 npm run dev        # Vite 开发服务器（默认 5173）
 npm run build      # tsc --noEmit && vite build  → dist/（构建期注入 .env / .env.production）
-npm test           # vitest run（当前 31 个文件 / 322 个用例，应全绿）
+npm test           # vitest run（当前 31 个文件 / 326 个用例，应全绿）
 npx tsc --noEmit   # 单独类型检查
 npx vitest run tests/xxx.test.ts   # 单文件测试
 
@@ -70,7 +70,7 @@ node scripts/generate-sample-xlsx.mjs   # 生成虚构示例数据到 examples/
 PORT=8080 node server/static-server.mjs # 本地起静态服务（默认端口 5000，静态目录 ../dist）
 ```
 
-当前基线：`tsc` 零错误、322 个用例全绿、`npm run build` 通过（2026-10-10 实测）。
+当前基线：`tsc` 零错误、326 个用例全绿、`npm run build` 通过（2026-10-12 实测）。
 
 ---
 
