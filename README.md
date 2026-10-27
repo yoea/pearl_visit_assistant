@@ -71,7 +71,7 @@ npm test           # 运行全部测试
 |---|---|---|
 | `VITE_ANALYSIS_PROVIDER` | `mock`（本地规则引擎）或 `real`（真实 AI） | `mock` |
 | `VITE_DEEPSEEK_API_KEY` | DeepSeek API Key（real 时必填） | 空 |
-| `VITE_DEEPSEEK_MODEL` | 模型名 | `deepseek-v4-flash` |
+| `VITE_DEEPSEEK_MODEL` | 模型名 | `deepseek-flash` |
 | `VITE_ANALYSIS_TIMEOUT_MS` | 请求超时毫秒数 | `60000` |
 | `VITE_APP_TITLE` | 页面标题（浏览器标签页/页眉/首页） | `珍珠生走访审核辅助平台` |
 | `VITE_APP_SUBTITLE` | 副标题（功能说明，首页标题下方） | 见 `.env.example` |

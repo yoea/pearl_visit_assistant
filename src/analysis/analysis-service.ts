@@ -20,7 +20,7 @@ export class SecurityViolationError extends Error {
  */
 export class AnalysisService {
   /**
-   * @param modelName 真实 AI 使用的模型名（如 deepseek-v4-flash）；mock 为 undefined。
+   * @param modelName 真实 AI 使用的模型名（如 deepseek-flash）；mock 为 undefined。
    * 仅供 UI 展示「使用的模型」提示，绝不参与任何逻辑判断。
    */
   constructor(

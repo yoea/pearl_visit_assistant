@@ -48,7 +48,7 @@ ssh -G x96max | grep -E '^(hostname|port|user) '   # 看这台机器实际连到
 |---|---|---|
 | `VITE_ANALYSIS_PROVIDER` | `real` 走真实 DeepSeek；`mock` 走本地规则引擎（不联网） | `real` |
 | `VITE_DEEPSEEK_API_KEY` | DeepSeek Key，`real` 时必填 | 见下方说明 |
-| `VITE_DEEPSEEK_MODEL` | 模型名 | `deepseek-v4-flash`（实测为 `deepseek-flash` 的可用别名） |
+| `VITE_DEEPSEEK_MODEL` | 模型名 | `deepseek-flash`（官方 `/models` 列表中的名字；旧名 `deepseek-v4-flash` 仍是可用别名，但会走推理模式，不要再填） |
 | `VITE_ANALYSIS_TIMEOUT_MS` | 单次请求超时 | `60000` |
 | `VITE_APP_TITLE` | 浏览器标签页 / 页眉 / 首页标题 | `珍珠生走访审核辅助平台` |
 | `VITE_APP_SUBTITLE` | 首页副标题 | 见 `.env.example` |

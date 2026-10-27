@@ -86,7 +86,7 @@ export default function ProcessStep({
   meta: { schoolName: string; cohort: string };
   /** 分析模式：'mock'（本地模拟，数据不出本机）| 'deepseek'（真实 AI）——绝不静默假装真实 AI */
   providerName: string;
-  /** 真实 AI 时使用的模型名（如 deepseek-v4-flash）；mock 为 undefined（显示本地模拟提示） */
+  /** 真实 AI 时使用的模型名（如 deepseek-flash）；mock 为 undefined（显示本地模拟提示） */
   modelName?: string;
   analyzing: boolean;
   error?: string;
