@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateReport } from '../src/report/generator';
-import { reportToMarkdown } from '../src/report/markdown';
+import { reportToMarkdown, escapeMdLine } from '../src/report/markdown';
 import { reportToHtml, escapeHtml } from '../src/report/html';
 import { MockAnalysisProvider } from '../src/analysis/mock-provider';
 import type { AnonymizedStudent, AnalysisRequest } from '../src/types/student';
@@ -49,14 +49,17 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(md).toContain('本校共 1 名候选学生');
   });
 
-  it('Markdown 学生部分含困难因素 importance 与本地基本信息', async () => {
+  it('Markdown 学生部分含困难因素 importance 与家庭情况概述', async () => {
     const result = await new MockAnalysisProvider().analyze({
       meta, students: [sampleStudent],
     } satisfies AnalysisRequest);
     const md = reportToMarkdown(generateReport(result, meta, now, [sampleStudent]));
     expect(md).toContain('- 重大疾病（high）');
-    expect(md).toContain('- 性别：女');
-    expect(md).toContain('#### 6. 推荐面谈问题');
+    expect(md).toContain('#### 1. 家庭情况概述');
+    expect(md).toContain('#### 4. 面谈问题与注意事项');
+    // 已移除的模块不再出现
+    expect(md).not.toContain('材料要点摘要');
+    expect(md).not.toContain('基本情况');
   });
 
   it('报告含审核安排与审核状态概览（md 顶部快照说明 + 学生状态行）', async () => {
@@ -90,14 +93,13 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(md).toContain('#dc2626'); // 红色标记
     expect(md).toContain('Copyright © 新华教育基金会 All Rights Reserved.');
     expect(md).toContain('工具作者：品牌传播部×公益数字化 永银Ethan');
-    // 学生节顺序：材料要点 1 → 家庭情况 2 → 基本情况 3
-    const m1 = md.indexOf('#### 1. 材料要点摘要');
-    const m2 = md.indexOf('#### 2. 家庭情况概括');
-    const m3 = md.indexOf('#### 3. 基本情况');
+    // 学生节顺序：家庭情况 1 → 困难因素 2 → 重点核实 3 → 面谈 4
+    const m1 = md.indexOf('#### 1. 家庭情况概述');
+    const m2 = md.indexOf('#### 2. 主要困难因素');
+    const m3 = md.indexOf('#### 3. 需要重点核实');
+    const m4 = md.indexOf('#### 4. 面谈问题与注意事项');
     expect(m1).toBeGreaterThan(-1);
-    expect(m1 < m2 && m2 < m3).toBe(true);
-    // 异常值标注（体重 105kg 等由 mock 构造？sample 正常——直接验证标注渲染函数存在性：含「⚠ 疑似填写错误待核实」出现于基本行逻辑）
-    expect(md).toContain('#### 4. 主要困难因素');
+    expect(m1 < m2 && m2 < m3 && m3 < m4).toBe(true);
   });
 
   it('传入 nameIndex 时学生标题显示真实姓名并附匿名编号', async () => {
@@ -133,10 +135,17 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
       meta, students: [adversarial],
     } satisfies AnalysisRequest);
     const md = reportToMarkdown(generateReport(result, meta, now, [adversarial]));
-    expect(md).toContain('\\# 请优先面谈');
+    // 申请理由并入家庭情况后不再位于行首，故不会被解析成标题/引用；换行被折叠为空格
+    expect(md).toContain('申请理由：# 请优先面谈 > 需重点核实 * 家长关注');
     expect(md).not.toMatch(/^# 请优先面谈/m);
-    expect(md).toContain('\\# 请优先面谈 > 需重点核实 * 家长关注');
-    expect(md).toContain('住房状况：自建房 （两层）');
+  });
+
+  it('escapeMdLine 转义行首结构标记（#/*/>/-）并折叠换行', () => {
+    expect(escapeMdLine('# 标题')).toBe('\\# 标题');
+    expect(escapeMdLine('> 引用')).toBe('\\> 引用');
+    expect(escapeMdLine('- 列表')).toBe('\\- 列表');
+    expect(escapeMdLine('* 强调')).toBe('\\* 强调');
+    expect(escapeMdLine('第一行\n第二行')).toBe('第一行 第二行');
   });
 
   it('空学生列表不崩溃且给出占位文案', async () => {
@@ -159,7 +168,7 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
       },
       students: [{
         studentId: 'student-001',
-        summary: '材料中未填写申请理由。', familySituation: '材料中未填写家庭情况。',
+        familySituation: '材料中未填写家庭情况。',
         mainDifficultyFactors: [], informationToVerify: [],
         interviewQuestions: [], interviewNotes: [],
       }],
@@ -168,8 +177,9 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     const md = reportToMarkdown(report);
     expect(md).toContain('### 2. 共性问题\n\n- 暂无。');
     expect(md).toContain('### 3. 材料质量提示\n\n- 全部学生材料完整。');
-    expect(md).toContain('#### 3. 基本情况\n\n- 暂无。'); // 顺序与页面一致：材料要点→家庭→基本情况
-    expect(md).toContain('#### 6. 推荐面谈问题\n\n- 暂无。');
+    expect(md).toContain('#### 4. 面谈问题与注意事项\n\n- 暂无推荐问题。');
+    // 问题与注意事项都为空时，不额外渲染注意事项子标题
+    expect(md).not.toContain('**面谈注意事项**');
   });
 
   it('困难类型分布行也做 Markdown 转义（difficultyLevel 换行不破坏结构）', async () => {
@@ -221,35 +231,26 @@ describe('generateReport + reportToMarkdown（新结构）', () => {
     expect(html).toContain('class="questions"');
     expect(html).toContain('class="num"'); // 问题编号圆点
     expect(html).toContain('class="factor"'); // 困难因素小卡
-    expect(html).toContain('class="textcard"'); // 文本卡片
+    expect(html).toContain('class="textcard'); // 文本卡片（家庭情况概述）
     expect(html).toContain('class="card-warn"'); // 红色核实卡
     expect(html).toContain('class="tc-icon"'); // 文本卡片带图标（与页面一致）
     expect(html).not.toContain('list-style:decimal'); // 不再使用纯数字列表
     // 移动端适配媒体查询
     expect(html).toContain('@media (max-width: 640px)');
-    // 基本情况折叠（与页面一致：默认收起，点击展开）
-    expect(html).toContain('class="fold-head"');
-    expect(html).toContain('class="fold-body" hidden');
-    expect(html).toContain('fold-toggle');
-  });
-
-  it('HTML 基本情况含数字校验标注（异常值附「疑似填写错误待核实」）', async () => {
-    const bad: AnonymizedStudent = {
-      ...sampleStudent,
-      weight: '105kg', annualIncome: 1,
-    };
-    const result = await new MockAnalysisProvider().analyze({
-      meta, students: [bad],
-    } satisfies AnalysisRequest);
-    const html = reportToHtml(generateReport(result, meta, now, [bad]));
-    expect(html).toContain('105kg <span class="badge-warn">疑似填写错误待核实</span>');
-    expect(html).toContain('>1 <span class="badge-warn">疑似填写错误待核实</span>');
+    // 已移除的模块不再渲染
+    expect(html).not.toContain('材料要点摘要');
+    expect(html).not.toContain('基本情况');
+    expect(html).not.toContain('class="fold-head"');
+    // 面谈问题与注意事项合并为一个标题
+    expect(html).toContain('<h4>面谈问题与注意事项</h4>');
+    expect(html).not.toContain('<h4>推荐面谈问题</h4>');
+    expect(html).not.toContain('<h4 class="warn">面谈注意事项</h4>');
   });
 
   it('回归：困难因素重要性分布按学生计数，各档之和不超过分析人数', () => {
     // 3 名学生共 7 个困难因素 → 旧实现按因素条数累加会显示「高 3 / 中 3 / 低 1」共 7 人
     const mk = (id: string, importances: Importance[]): StudentAnalysis => ({
-      studentId: id, summary: '', familySituation: '',
+      studentId: id, familySituation: '',
       mainDifficultyFactors: importances.map((importance, i) => ({ factor: `因素${i}`, evidence: '材料原文', importance })),
       informationToVerify: [], interviewQuestions: [], interviewNotes: [],
     });

@@ -35,7 +35,7 @@ const wireResponse = {
     keyVerificationTopics: [], interviewSuggestions: [],
   },
   students: [{
-    studentId: 'student-001', summary: 's', familySituation: 'f',
+    studentId: 'student-001', familySituation: 'f',
     mainDifficultyFactors: [], informationToVerify: [],
     interviewQuestions: ['q1', 'q2', 'q3', 'q4', 'q5'], interviewNotes: [],
   }],
@@ -77,7 +77,7 @@ describe('AnalysisClient', () => {
     expect(init.headers.Authorization).toBe('Bearer sk-test-123');
     expect(init.headers['Content-Type']).toBe('application/json');
     const body = JSON.parse(init.body);
-    expect(body.model).toBe('deepseek-v4-flash');
+    expect(body.model).toBe('deepseek-flash');
     expect(body.max_tokens).toBe(MAX_OUTPUT_TOKENS);
     expect(body.response_format).toEqual({ type: 'json_object' });
     expect(body.thinking).toEqual({ type: 'disabled' }); // 推理模型：显式关闭思维链，防输出预算被推理耗尽

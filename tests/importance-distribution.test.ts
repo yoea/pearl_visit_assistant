@@ -6,7 +6,6 @@ import type { DifficultyFactor, Importance, StudentAnalysis } from '../src/analy
 function student(id: string, importances: Importance[]): StudentAnalysis {
   return {
     studentId: id,
-    summary: '',
     familySituation: '',
     mainDifficultyFactors: importances.map<DifficultyFactor>((importance, i) => ({
       factor: `因素${i}`, evidence: '材料原文', importance,

@@ -113,6 +113,10 @@ PORT=8080 node server/static-server.mjs # 本地起静态服务（默认端口 5
 
 ## 4. 改动同步清单（最容易漏的地方）
 
+- **增删分析结果字段**（`StudentAnalysis` / `SchoolAnalysis` 的增删改）要同步六处，漏一处就编译不过或渲染空白：
+  `analysis/provider.ts` 类型 → `analysis/payload.ts` 的 zod schema → `analysis/system-prompt.ts` 的输出 schema 与规则文字
+  → `analysis/mock-provider.ts` → 三处渲染（`components/ReportStep.tsx`、`report/markdown.ts`、`report/html.ts`）→ 构造该结构的全部测试。
+  注意 `SENT_FIELDS` 与 `FieldCountIs34` 只管**发送侧**（请求字段），改响应字段不用动它。
 - 新增可发送字段：`AnonymizedStudent`（`types/student.ts`）+ `FIELD_POLICIES` + `payload.ts` 的 `SENT_FIELDS`
   （含 `FieldCountIs34` 编译期断言，字段数变化必须同步改）+ 报告渲染 + 相关测试。
 - 新增字段策略别名：四张表之间**零交集**是不变量（有测试钉死），删除表优先（fail-safe）。

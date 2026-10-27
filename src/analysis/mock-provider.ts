@@ -223,9 +223,10 @@ function buildStudentAnalysis(s: AnonymizedStudent): StudentAnalysis {
 
   return {
     studentId: s.anonymousId,
-    summary: excerpt(s.applicationReason, 120) || '材料中未填写申请理由。',
+    // 原「材料要点摘要」已并入本字段：申请理由是材料里最核心的叙述，不能因去重而丢掉
     familySituation:
       [
+        s.applicationReason ? `申请理由：${excerpt(s.applicationReason, 120)}` : null,
         s.householdType ? `户口类型${s.householdType}` : null,
         s.annualIncome != null ? `家庭年收入约${s.annualIncome}元` : null,
         s.perCapitaIncome != null ? `人均年收入${s.perCapitaIncome}元` : null,

@@ -24,7 +24,7 @@ function makeReport(schoolName: string): Report {
       keyVerificationTopics: [], interviewSuggestions: [],
     },
     students: [{
-      studentId: 'student-001', summary: 's', familySituation: 'f',
+      studentId: 'student-001', familySituation: 'f',
       mainDifficultyFactors: [], informationToVerify: [],
       interviewQuestions: ['q1', 'q2', 'q3', 'q4', 'q5'], interviewNotes: [],
     }],

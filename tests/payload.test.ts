@@ -102,7 +102,7 @@ describe('wireResponseSchema', () => {
     keyVerificationTopics: [], interviewSuggestions: [],
   };
   const okStudent = {
-    studentId: 'student-001', summary: 's', familySituation: 'f',
+    studentId: 'student-001', familySituation: 'f',
     mainDifficultyFactors: [{ factor: '低收入', evidence: '人均年收入8000元', importance: 'high' }],
     informationToVerify: [], interviewQuestions: ['q1', 'q2', 'q3', 'q4', 'q5'], interviewNotes: [],
   };

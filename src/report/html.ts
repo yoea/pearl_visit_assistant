@@ -1,8 +1,5 @@
 import { GENERAL_GUIDE } from './general-guide';
 import type { Report } from './types';
-import type { AnonymizedStudent } from '../types/student';
-import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
-import { checkNumericIssues } from '../anonymization/numeric-validation';
 import { countReviewStatuses } from './review-status';
 import { countDifficultyReasons } from './difficulty-reason';
 import { countStudentImportance, IMPORTANCE_LABEL } from './importance-distribution';
@@ -21,22 +18,6 @@ export function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/\r?\n/g, '<br>');
-}
-
-function basicInfoRows(s: AnonymizedStudent): string {
-  const rows: string[] = [];
-  // 数字校验（与页面同一规则）：异常值后附「疑似填写错误待核实」标签
-  const issueKeys = new Set(checkNumericIssues(s).map((i) => i.key));
-  for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
-    if (k === 'anonymousId' || k === 'reviewStatus') continue;
-    const v = s[k];
-    if (v == null || v === '') continue;
-    const badge = issueKeys.has(k)
-      ? ' <span class="badge-warn">疑似填写错误待核实</span>'
-      : '';
-    rows.push(`<tr><td>${escapeHtml(STUDENT_FIELD_LABELS[k])}</td><td>${escapeHtml(String(v))}${badge}</td></tr>`);
-  }
-  return rows.length > 0 ? rows.join('') : '<tr><td colspan="2">暂无。</td></tr>';
 }
 
 /** CSS 横向条形图：[{label, count, color}] → div 条（宽度按最大计数归一） */
@@ -100,22 +81,15 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     ? `<div class="banner-warn">重点困难：${highFactors.map((f) =>
       `<span class="tag tag-high">${escapeHtml(f.factor)}</span>`).join('')}</div>`
     : ''}
-  <h4>材料要点摘要</h4>
-  <div class="textcard"><span class="tc-icon">📝</span><span>${escapeHtml(g.summary)}</span></div>
-  <h4>家庭情况概括</h4>
+  <h4>家庭情况概述</h4>
   <div class="textcard green"><span class="tc-icon">👪</span><span>${escapeHtml(g.familySituation)}</span></div>
-  <h4 class="fold-head">基本情况 <span class="fold-toggle">展开</span></h4>
-  <div class="fold-body" hidden>
-    <table class="info"><tbody>${local ? basicInfoRows(local) : '<tr><td colspan="2">暂无。</td></tr>'}</tbody></table>
-  </div>
   <h4>主要困难因素</h4>
   ${factors ? `<div class="factors">${factors}</div>` : '<p class="empty">材料中未识别出明显困难因素。</p>'}
   <h4 class="warn-red">需要重点核实</h4>
   <div class="card-warn">${listItems(g.informationToVerify, '暂未发现明显需要核实的事项。', 'warn')}</div>
-  <h4>推荐面谈问题</h4>
-  <ol class="questions">${questions || '<p class="empty">暂无。</p>'}</ol>
-  <h4 class="warn">面谈注意事项</h4>
-  <div class="card-amber">${listItems(g.interviewNotes, '无特殊注意事项。', 'warn')}</div>
+  <h4>面谈问题与注意事项</h4>
+  ${questions ? `<ol class="questions">${questions}</ol>` : '<p class="empty">暂无推荐问题。</p>'}
+  ${g.interviewNotes.length > 0 ? `<div class="card-amber">${listItems(g.interviewNotes, '', 'warn')}</div>` : ''}
 </section>`;
   }).join('\n');
 
@@ -149,9 +123,6 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   li.warn { color: #b45309; }
   .empty { color: #94a3b8; font-size: 12px; }
   .hint { color: #94a3b8; font-size: 12px; margin: 4px 0 0; }
-  table.info { border-collapse: collapse; width: 100%; font-size: 12px; }
-  table.info td { border: 1px solid #e2e8f0; padding: 4px 8px; }
-  table.info td:first-child { background: #f8fafc; color: #64748b; white-space: nowrap; }
   .tags { display: flex; flex-wrap: wrap; gap: 6px; }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; }
   .tag-high { background: #fef3c7; color: #b45309; }
@@ -168,11 +139,6 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
   .card-warn { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 12px; }
   .card-amber { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; }
   h4.warn-red { color: #b91c1c; }
-  .badge-warn { display: inline-block; background: #fef3c7; color: #b45309; border-radius: 4px; padding: 0 6px; font-size: 11px; margin-left: 4px; white-space: nowrap; }
-  [hidden] { display: none !important; }
-  .fold-head { cursor: pointer; user-select: none; transition: color .15s; }
-  .fold-head:hover { color: #047857; }
-  .fold-toggle { color: #047857; font-size: 12px; font-weight: 500; margin-left: 6px; }
   .factors { display: flex; flex-direction: column; gap: 6px; }
   .factor { display: flex; gap: 8px; align-items: flex-start; background: #f8fafc; border-radius: 8px; padding: 8px 12px; }
   .factor-body b { font-size: 13px; color: #1e293b; }
@@ -216,17 +182,9 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     .student h3 { font-size: 12.5px; margin: 0 0 4px; padding-bottom: 3px; border-bottom: 1px solid #e2e8f0; }
     .textcard, .factor, .card-warn, .card-amber, .banner-warn, .guide { padding: 5px 9px; margin: 3px 0; break-inside: avoid; }
     p, li { font-size: 11.5px; margin: 2px 0; }
-    /* 基本情况表格紧凑：窄 label 列 + 内容列，减少空置感 */
-    table.info { font-size: 10.5px; border-collapse: collapse; }
-    table.info td { padding: 1px 4px; border: none; }
-    table.info tr { border-bottom: 1px solid #f1f5f9; }
-    table.info td:first-child { width: 112px; }
     .bar-label { font-size: 10.5px; }
     .bar-count { font-size: 10.5px; }
     .bar-track { height: 8px; }
-    /* 打印时强制展开基本情况折叠（[hidden] 优先级低于本规则：本规则置于其后） */
-    [hidden] { display: block !important; }
-    .fold-toggle { display: none; }
     .search-bar { display: none; }
   }
   @media (max-width: 640px) {
@@ -236,7 +194,6 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
     .banner h1 { font-size: 17px; }
     .card { padding: 14px; }
     .student { padding: 12px 14px; }
-    table.info { display: block; overflow-x: auto; white-space: nowrap; }
     .bar-label { width: 56px; }
     .bar-count { width: 44px; }
   }
@@ -332,17 +289,7 @@ export function reportToHtml(report: Report, nameIndex?: ReadonlyMap<string, str
 </div>
 <script>
 // 报告文件内置脚本（纯内联，无外部依赖）：
-// 1) 基本情况折叠（与平台页面一致）
-document.querySelectorAll('.fold-head').forEach(function (h) {
-  h.addEventListener('click', function () {
-    var body = h.nextElementSibling;
-    var open = body.hidden;
-    body.hidden = !open;
-    var t = h.querySelector('.fold-toggle');
-    if (t) t.textContent = open ? '收起' : '展开';
-  });
-});
-// 2) 学生搜索：输入姓名实时下拉 → 点击定位到该学生并高亮（数据即页面内姓名）
+// 学生搜索：输入姓名实时下拉 → 点击定位到该学生并高亮（数据即页面内姓名）
 (function () {
   var input = document.getElementById('studentSearch');
   var list = document.getElementById('searchResults');
@@ -379,13 +326,6 @@ document.querySelectorAll('.fold-head').forEach(function (h) {
     el.classList.remove('flash');
     void el.offsetWidth; // 重启动画
     el.classList.add('flash');
-    // 定位后展开该生折叠的基本情况
-    var fold = el.querySelector('.fold-head');
-    if (fold && fold.nextElementSibling && fold.nextElementSibling.hidden) {
-      fold.nextElementSibling.hidden = false;
-      var tg = fold.querySelector('.fold-toggle');
-      if (tg) tg.textContent = '收起';
-    }
   }
   input.addEventListener('input', function () { render(input.value); });
   input.addEventListener('focus', function () { render(input.value); });

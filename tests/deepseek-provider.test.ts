@@ -31,7 +31,7 @@ const wireResponse = (ids: string[]) => ({
     keyVerificationTopics: [], interviewSuggestions: [],
   },
   students: ids.map((id) => ({
-    studentId: id, summary: 's', familySituation: 'f',
+    studentId: id, familySituation: 'f',
     mainDifficultyFactors: [], informationToVerify: [],
     interviewQuestions: ['q1', 'q2', 'q3', 'q4', 'q5'], interviewNotes: [],
   })),

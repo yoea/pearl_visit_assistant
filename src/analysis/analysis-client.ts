@@ -45,7 +45,7 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
  * 放宽到 32768 留出足够余量，并配合 finish_reason 截断检测 + 拆批重试兜底。
  */
 export const MAX_OUTPUT_TOKENS = 32_768;
-export const DEFAULT_MODEL = 'deepseek-v4-flash';
+export const DEFAULT_MODEL = 'deepseek-flash';
 export const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
 
 interface ChatMessage {

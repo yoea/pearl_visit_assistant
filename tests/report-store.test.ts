@@ -37,7 +37,7 @@ function makeReport(schoolName: string, studentCount = 3): Report {
       keyVerificationTopics: [], interviewSuggestions: [],
     },
     students: Array.from({ length: studentCount }, (_, i) => ({
-      studentId: `student-00${i + 1}`, summary: 's', familySituation: 'f',
+      studentId: `student-00${i + 1}`, familySituation: 'f',
       mainDifficultyFactors: [], informationToVerify: [],
       interviewQuestions: ['q1', 'q2', 'q3', 'q4', 'q5'], interviewNotes: [],
     })),

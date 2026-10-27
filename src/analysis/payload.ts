@@ -78,7 +78,6 @@ export const difficultyFactorSchema = z.object({
 
 export const studentAnalysisSchema = z.object({
   studentId: z.string().min(1),
-  summary: z.string(),
   familySituation: z.string(),
   mainDifficultyFactors: z.array(difficultyFactorSchema),
   informationToVerify: z.array(z.string()),

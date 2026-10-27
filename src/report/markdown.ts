@@ -1,8 +1,5 @@
 import { GENERAL_GUIDE } from './general-guide';
 import type { Report } from './types';
-import type { AnonymizedStudent } from '../types/student';
-import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
-import { checkNumericIssues } from '../anonymization/numeric-validation';
 import { countReviewStatuses } from './review-status';
 import { countDifficultyReasons } from './difficulty-reason';
 import { decorateStudentIds } from './name-tag';
@@ -15,20 +12,6 @@ export function escapeMdLine(text: string): string {
   return text
     .replace(/\r?\n/g, ' ') // 换行折叠为空格，避免打散段落/列表
     .replace(/^(?=[#*>-])/, '\\'); // 行首标题/列表/引用标记前加反斜杠转义
-}
-
-/** 本地学生数据 → 基本信息行（null/空串过滤，anonymousId 不展示；异常值附校验标注） */
-function basicInfoLines(s: AnonymizedStudent): string[] {
-  const lines: string[] = [];
-  const issueKeys = new Set(checkNumericIssues(s).map((i) => i.key));
-  for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
-    if (k === 'anonymousId' || k === 'reviewStatus') continue;
-    const v = s[k];
-    if (v == null || v === '') continue;
-    const warn = issueKeys.has(k) ? ' ⚠ 疑似填写错误待核实' : '';
-    lines.push(`- ${STUDENT_FIELD_LABELS[k]}：${escapeMdLine(String(v))}${warn}`);
-  }
-  return lines;
 }
 
 /** 报告 → Markdown 文本（纯函数、确定性；不含日期随机量）。
@@ -131,45 +114,33 @@ export function reportToMarkdown(report: Report, nameIndex?: ReadonlyMap<string,
       lines.push(`> 重点困难：${highFactors.map((f) => escapeMdLine(f.factor)).join('、')}`);
       lines.push('');
     }
-    lines.push('#### 1. 材料要点摘要');
-    lines.push('');
-    lines.push(escapeMdLine(g.summary));
-    lines.push('');
-    lines.push('#### 2. 家庭情况概括');
+    lines.push('#### 1. 家庭情况概述');
     lines.push('');
     lines.push(escapeMdLine(g.familySituation));
     lines.push('');
-    lines.push('#### 3. 基本情况');
-    lines.push('');
-    const local = dataById.get(g.studentId);
-    if (local) {
-      lines.push(...basicInfoLines(local));
-    } else {
-      lines.push('- 暂无。');
-    }
-    lines.push('');
-    lines.push('#### 4. 主要困难因素');
+    lines.push('#### 2. 主要困难因素');
     lines.push('');
     for (const f of g.mainDifficultyFactors) {
       lines.push(`- ${escapeMdLine(f.factor)}（${f.importance}）：${escapeMdLine(f.evidence)}`);
     }
     if (g.mainDifficultyFactors.length === 0) lines.push('- 材料中未识别出明显困难因素。');
     lines.push('');
-    lines.push('#### 5. 需要重点核实');
+    lines.push('#### 3. 需要重点核实');
     lines.push('');
     for (const v of g.informationToVerify) lines.push(`- ${escapeMdLine(v)}`);
     if (g.informationToVerify.length === 0) lines.push('- 暂未发现明显需要核实的事项。');
     lines.push('');
-    lines.push('#### 6. 推荐面谈问题');
+    lines.push('#### 4. 面谈问题与注意事项');
     lines.push('');
     g.interviewQuestions.forEach((q, i) => lines.push(`${i + 1}. ${escapeMdLine(q)}`));
-    if (g.interviewQuestions.length === 0) lines.push('- 暂无。');
+    if (g.interviewQuestions.length === 0) lines.push('- 暂无推荐问题。');
     lines.push('');
-    lines.push('#### 7. 面谈注意事项');
-    lines.push('');
-    for (const c of g.interviewNotes) lines.push(`- ${escapeMdLine(c)}`);
-    if (g.interviewNotes.length === 0) lines.push('- 无特殊注意事项。');
-    lines.push('');
+    if (g.interviewNotes.length > 0) {
+      lines.push('**面谈注意事项**');
+      lines.push('');
+      for (const c of g.interviewNotes) lines.push(`- ${escapeMdLine(c)}`);
+      lines.push('');
+    }
   }
 
   lines.push(`## ${['一', '二', '三', '四'][sec - 1]}、通用面谈指南`);

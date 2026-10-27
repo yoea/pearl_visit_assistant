@@ -22,7 +22,7 @@ export interface SchoolAnalysis {
 
 export interface StudentAnalysis {
   studentId: string;
-  summary: string;
+  /** 家庭情况归纳：报告里唯一的文字概述字段，须尽量保留材料中的具体信息 */
   familySituation: string;
   mainDifficultyFactors: DifficultyFactor[];
   informationToVerify: string[];

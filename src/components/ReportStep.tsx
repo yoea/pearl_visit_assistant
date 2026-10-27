@@ -3,12 +3,9 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Report } from '../report/types';
 import type { StudentAnalysis, TokenUsage } from '../analysis/provider';
 import type { CumulativeTokenUsage } from '../stats/token-usage-store';
-import type { AnonymizedStudent } from '../types/student';
 import { reportToMarkdown } from '../report/markdown';
 import { reportToHtml } from '../report/html';
 import { downloadTextFile } from '../utils/download';
-import { STUDENT_FIELD_LABELS } from '../utils/field-labels';
-import { checkNumericIssues, NUMERIC_ERROR_LABEL } from '../anonymization/numeric-validation';
 import { APP_VERSION } from '../app-config';
 import { reportReportDownloaded, reportStudentSearch } from '../stats/usage-reporter';
 import { countReviewStatuses, reviewStatusTone, REVIEW_STATUS_COLORS } from '../report/review-status';
@@ -66,26 +63,6 @@ function DonutChart({ items }: { items: { label: string; count: number }[] }) {
   );
 }
 
-/** 本地学生数据 → 基本信息行（null/空串过滤，anonymousId 不展示） */
-function basicInfoOf(s: AnonymizedStudent): { key: string; label: string; value: string }[] {
-  const out: { key: string; label: string; value: string }[] = [];
-  for (const k of Object.keys(STUDENT_FIELD_LABELS) as (keyof AnonymizedStudent)[]) {
-    if (k === 'anonymousId' || k === 'reviewStatus') continue; // 审核状态由徽章/饼图呈现
-    const v = s[k];
-    if (v == null || v === '') continue;
-    out.push({ key: k, label: STUDENT_FIELD_LABELS[k], value: String(v) });
-  }
-  return out;
-}
-
-/**
- * 单字段常识/单位校验（规则与脱敏阶段共享，见 numeric-validation.ts）。
- * 返回统一提示文案「疑似填写错误待核实」，无异常返回 null。
- */
-export function fieldAnomalyOf(key: string, v: string, s: AnonymizedStudent): string | null {
-  return checkNumericIssues(s).some((i) => i.key === key && i.value === v) ? NUMERIC_ERROR_LABEL : null;
-}
-
 const IMPORTANCE_LABEL: Record<string, string> = { high: '高', medium: '中', low: '低' };
 
 /** 图标 + 标题 + 正文的文本卡片（浅底、左侧色条） */
@@ -102,14 +79,8 @@ function TextCard({ icon, title, text, accent }: {
   );
 }
 
-function StudentSection({ g, local }: {
-  g: StudentAnalysis;
-  local: AnonymizedStudent | undefined;
-}) {
-  const basics = local ? basicInfoOf(local) : [];
+function StudentSection({ g }: { g: StudentAnalysis }) {
   const highFactors = g.mainDifficultyFactors.filter((f) => f.importance === 'high');
-  // 基本情况默认折叠：优先展示家庭情况与材料要点（走访最关注的信息）
-  const [showBasics, setShowBasics] = useState(false);
   return (
     <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
       {/* 重点困难概览条：突出 high 因素 */}
@@ -120,39 +91,7 @@ function StudentSection({ g, local }: {
         </div>
       )}
 
-      <TextCard icon="📝" title="材料要点摘要" accent="border-blue-300" text={g.summary} />
-      <TextCard icon="👪" title="家庭情况概括" accent="border-emerald-300" text={g.familySituation} />
-
-      {/* 基本情况：默认折叠，点击展开（两列信息卡，label 左 / value 右） */}
-      {basics.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setShowBasics(!showBasics)}
-            className="flex w-full items-center justify-between text-left"
-          >
-            <h4 className="flex items-center gap-1.5 border-l-4 border-slate-300 pl-2 text-xs font-semibold text-slate-700">
-              <span aria-hidden="true">📋</span> 基本情况
-            </h4>
-            <span className="text-xs font-medium text-emerald-700">{showBasics ? '收起' : '展开'}</span>
-          </button>
-          {showBasics && (
-            <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-              {basics.map(({ key, label, value }) => (
-                <div key={label} className="flex items-baseline gap-1.5">
-                  <dt className="w-24 shrink-0 text-xs text-slate-400">{label}</dt>
-                  <dd className="text-xs text-slate-700">
-                    {value}
-                    {fieldAnomalyOf(key, value, local!) && (
-                      <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">疑似填写错误待核实</span>
-                    )}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </div>
-      )}
+      <TextCard icon="👪" title="家庭情况概述" accent="border-emerald-300" text={g.familySituation} />
 
       {/* 主要困难因素：每因素独立小卡 */}
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -192,36 +131,35 @@ function StudentSection({ g, local }: {
         </div>
       )}
 
-      {/* 推荐面谈问题：编号圆点列表 */}
-      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-        <h4 className="flex items-center gap-1.5 border-l-4 border-violet-300 pl-2 text-xs font-semibold text-slate-700">
-          <span aria-hidden="true">💬</span> 推荐面谈问题
-        </h4>
-        <ol className="mt-2 space-y-1.5">
-          {g.interviewQuestions.map((q, i) => (
-            <li key={q} className="flex items-start gap-2">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-semibold text-emerald-700">
-                {i + 1}
-              </span>
-              <span className="text-xs leading-relaxed text-slate-700">{q}</span>
-            </li>
-          ))}
-        </ol>
-      </div>
-
-      {/* 面谈注意事项：琥珀色提醒卡 */}
-      {g.interviewNotes.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <h4 className="flex items-center gap-1.5 border-l-4 border-amber-400 pl-2 text-xs font-semibold text-amber-800">
-            <span aria-hidden="true">📌</span> 面谈注意事项
+      {/* 面谈问题与注意事项：合并为一块，问题在前、注意事项作为补充提示 */}
+      {(g.interviewQuestions.length > 0 || g.interviewNotes.length > 0) && (
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+          <h4 className="flex items-center gap-1.5 border-l-4 border-violet-300 pl-2 text-xs font-semibold text-slate-700">
+            <span aria-hidden="true">💬</span> 面谈问题与注意事项
           </h4>
-          <ul className="mt-1.5 space-y-1">
-            {g.interviewNotes.map((c) => (
-              <li key={c} className="flex gap-1.5 text-xs leading-relaxed text-amber-800">
-                <span aria-hidden="true" className="shrink-0">·</span> {c}
-              </li>
-            ))}
-          </ul>
+          {g.interviewQuestions.length > 0 ? (
+            <ol className="mt-2 space-y-1.5">
+              {g.interviewQuestions.map((q, i) => (
+                <li key={q} className="flex items-start gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-semibold text-emerald-700">
+                    {i + 1}
+                  </span>
+                  <span className="text-xs leading-relaxed text-slate-700">{q}</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-1.5 text-xs text-slate-400">暂无推荐问题。</p>
+          )}
+          {g.interviewNotes.length > 0 && (
+            <ul className="mt-2 space-y-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2">
+              {g.interviewNotes.map((c) => (
+                <li key={c} className="flex gap-1.5 text-xs leading-relaxed text-amber-800">
+                  <span aria-hidden="true" className="shrink-0">📌</span> {c}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
@@ -822,10 +760,7 @@ export default function ReportStep({
                 <span className="text-xs text-slate-400">{open === g.studentId ? '收起' : '展开'}</span>
               </button>
               {open === g.studentId && (
-                <StudentSection
-                  g={g}
-                  local={dataById.get(g.studentId)}
-                />
+                <StudentSection g={g} />
               )}
             </div>
           ))}
@@ -888,10 +823,7 @@ export default function ReportStep({
                 </button>
               </div>
             </div>
-            <StudentSection
-              g={report.students.find((s) => s.studentId === modalId)!}
-              local={dataById.get(modalId)}
-            />
+            <StudentSection g={report.students.find((s) => s.studentId === modalId)!} />
           </div>
         </div>
       )}

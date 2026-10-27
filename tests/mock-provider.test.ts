@@ -118,12 +118,20 @@ describe('MockAnalysisProvider（新结构）', () => {
     const provider = new MockAnalysisProvider();
     const result = await provider.analyze(requestWith([
       student({
-        anonymousId: 'student-002', householdType: null, annualIncome: null,
-        perCapitaIncome: null, housingStatus: null, schoolChildrenCount: null,
-        elderlySupportStatus: null, debtStatus: null, visitSummary: null,
+        anonymousId: 'student-002', applicationReason: null, householdType: null,
+        annualIncome: null, perCapitaIncome: null, housingStatus: null,
+        schoolChildrenCount: null, elderlySupportStatus: null, debtStatus: null,
+        visitSummary: null,
       }),
     ]));
     expect(result.students[0].familySituation).toBe('材料中未填写家庭情况。');
+  });
+
+  it('申请理由并入家庭情况（原「材料要点摘要」删除后材料信息不丢）', async () => {
+    const provider = new MockAnalysisProvider();
+    const result = await provider.analyze(requestWith([student({ anonymousId: 'student-003' })]));
+    expect(result.students[0].familySituation).toContain('申请理由：');
+    expect(result.students[0].familySituation).toContain('家庭困难，希望减轻负担');
   });
 
   it('学校级核实主题来自命中的因素（同源 FACTOR_DEFS）', async () => {
